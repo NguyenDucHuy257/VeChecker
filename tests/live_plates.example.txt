@@ -1,0 +1,5 @@
+# Sao chép file này thành live_plates.txt (file thật đã được .gitignore).
+# Mỗi dòng là một input được phép dùng để nghiệm thu.
+00A00000
+00A00000T
+00A00000V
