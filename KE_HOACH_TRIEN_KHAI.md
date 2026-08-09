@@ -95,7 +95,7 @@ src/app/
     lookup.py
 
   views/
-    cli_view.py
+    script_view.py
     telegram_view.py
 
   controllers/
@@ -131,7 +131,7 @@ README.md
 Quy ước MVC:
 
 - `models`: dữ liệu và trạng thái DB; không gọi Telegram hoặc website.
-- `views`: hiển thị/định dạng CLI và Telegram; không chứa nghiệp vụ tra cứu.
+- `views`: hiển thị/định dạng cho script test Python và Telegram; không chứa nghiệp vụ tra cứu.
 - `controllers`: nhận input, kiểm tra quyền và điều phối model/service/view.
 - `services`: tích hợp website, parser, CAPTCHA và worker; không định dạng message Telegram.
 
@@ -175,14 +175,16 @@ Không lưu password nguồn, bot token, CAPTCHA hoặc cookie trong DB. Credent
 
 ## 5. Phase 1 — Base, DB, parser và CAPTCHA tay
 
+**Trạng thái 09/08/2026:** source và 94 test tự động đã hoàn thành; UAT live chưa ký `PASS`, vì vậy chưa chuyển Phase 2. Checklist ký chính thức nằm tại [docs/PHASE_1.md](docs/PHASE_1.md).
+
 ### Phạm vi thực hiện
 
 - Tạo cấu trúc source, cấu hình `.env`, logging có che bí mật và SQLite migration.
 - Seed admin từ `TELEGRAM_ADMIN_IDS`; Phase 1 chỉ kiểm tra DB, chưa kết nối bot.
 - Tạo script làm sạch HAR; tuyệt đối không dùng HAR gốc làm test fixture.
-- Viết `vr_client` cho login, refresh CAPTCHA và tra cứu tuần tự.
+- Viết `webforms_client` cho login, refresh CAPTCHA và tra cứu tuần tự.
 - Viết parser cho ba trường yêu cầu và sửa lỗi encoding tiếng Việt.
-- Viết CLI để nhập CAPTCHA tay, tra cứu một biển số và chạy danh sách biển số tuần tự.
+- Viết các script Python để nhập CAPTCHA tay, tra cứu một biển số và chạy danh sách biển số tuần tự; không xây CLI command framework.
 - Phân loại tối thiểu: CAPTCHA sai, đăng nhập sai, biển số sai định dạng, không có dữ liệu, timeout, hết phiên, HTML thay đổi.
 
 ### Test tự động bắt buộc
@@ -198,18 +200,9 @@ Không lưu password nguồn, bot token, CAPTCHA hoặc cookie trong DB. Credent
 
 ### Nghiệm thu Phase 1 do chủ dự án thực hiện
 
-| ID | Thao tác nghiệm thu | Kết quả bắt buộc |
-|---|---|---|
-| P1-01 | Khởi động với DB mới | Có đúng admin mặc định với trạng thái `ACTIVE`; không có user thừa |
-| P1-02 | Nhập CAPTCHA sai một lần | Báo CAPTCHA sai, cho lấy ảnh mới; ứng dụng không treo |
-| P1-03 | Nhập CAPTCHA đúng | Chuyển sang trạng thái `READY`, không in credential ra màn hình/log |
-| P1-04 | Tra cứu một biển số hợp lệ và đối chiếu thủ công trên web | Đúng loại phương tiện, nhãn hiệu và hạn kiểm định |
-| P1-05 | Tra cứu biển số sai định dạng | Báo sai định dạng, không ghi `SUCCESS` |
-| P1-06 | Tra cứu biển số không có dữ liệu | Báo không có dữ liệu, không làm hỏng phiên |
-| P1-07 | Tra cứu tuần tự 10–20 biển số được phép, cách nhau tối thiểu 2 giây | Không trộn dữ liệu; tỷ lệ thành công 100% với các biển số web trả kết quả |
-| P1-08 | Chạy lại toàn bộ test | Tất cả test pass |
+Thực hiện và ký P1-UAT-01 đến P1-UAT-10 theo [docs/PHASE_1.md](docs/PHASE_1.md). Danh sách này bao gồm DB/admin, CAPTCHA sai và đúng, candidate `T/V`, input sai, `NOT_FOUND`, đối chiếu năm kết quả, stability 10–20 input và toàn bộ test tự động.
 
-**Cổng Phase 1:** Chỉ chuyển Phase 2 khi chủ dự án ghi `PASS` cho P1-01 đến P1-08.
+**Cổng Phase 1:** Chỉ chuyển Phase 2 khi chủ dự án ghi `PASS` cho toàn bộ P1-UAT-01 đến P1-UAT-10.
 
 ```text
 Nghiệm thu Phase 1: PASS / FAIL
