@@ -40,6 +40,7 @@ Tài khoản test thực tế phải được cấu hình bằng `VR_USERNAME` v
 
 Quy tắc tạo candidate:
 
+- Sau `trim + uppercase`, input hợp lệ có dạng `2 số + 1 chữ + 5 số`, có thể kèm đuôi `T/V`; sai dạng trả `INVALID` cục bộ và không gọi nguồn.
 - Input chưa có đuôi `T/V`: tra cứu độc lập `<biển_số>T` và `<biển_số>V`, trả mọi candidate có dữ liệu.
 - Input đã có đuôi `T` hoặc `V`: chỉ tra cứu đúng input một lần.
 - Không candidate nào có dữ liệu: trả `NOT_FOUND`.
@@ -175,7 +176,7 @@ Không lưu password nguồn, bot token, CAPTCHA hoặc cookie trong DB. Credent
 
 ## 5. Phase 1 — Base, DB, parser và CAPTCHA tay
 
-**Trạng thái 09/08/2026:** source và 94 test tự động đã hoàn thành; UAT live chưa ký `PASS`, vì vậy chưa chuyển Phase 2. Checklist ký chính thức nằm tại [docs/PHASE_1.md](docs/PHASE_1.md).
+**Trạng thái 09/08/2026:** source và 105 test tự động đã hoàn thành; UAT live chưa ký `PASS`, vì vậy chưa chuyển Phase 2. Checklist ký chính thức nằm tại [docs/PHASE_1.md](docs/PHASE_1.md).
 
 ### Phạm vi thực hiện
 
@@ -316,7 +317,7 @@ Ghi chú lỗi cần sửa:
 
 - HAR gốc chứa dữ liệu nhạy cảm; thêm `*.har`, `.env`, DB và ảnh CAPTCHA vào `.gitignore` ngay từ Phase 1.
 - Nên đổi mật khẩu tài khoản nguồn vì mật khẩu xuất hiện trong HAR.
-- Chuẩn hóa biển số bằng `trim + uppercase`, sau đó áp dụng đúng quy tắc candidate `T/V`; không tự thêm quy tắc định dạng khác khi chưa có test xác nhận.
+- Chuẩn hóa biển số bằng `trim + uppercase`, kiểm tra định dạng đã được HAR/UAT xác nhận, sau đó áp dụng đúng quy tắc candidate `T/V`; định dạng đặc biệt mới chỉ được bổ sung khi có mẫu live và test xác nhận.
 - HAR không có cookie/`Set-Cookie`; phải kiểm chứng live trước khi kết luận phiên đăng nhập có thể chia sẻ giữa các worker.
 - Không dùng chung HTTP session hoặc WebForms hidden field giữa các thread.
 - Không log raw request body hoặc raw response HTML.

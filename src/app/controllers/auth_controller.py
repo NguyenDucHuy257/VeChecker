@@ -30,13 +30,17 @@ class AuthController:
         view: ManualLoginView,
         *,
         max_attempts: int = 3,
+        max_image_refreshes: int = 3,
     ) -> None:
         if max_attempts <= 0:
             raise ValueError("max_attempts must be greater than zero")
+        if max_image_refreshes <= 0:
+            raise ValueError("max_image_refreshes must be greater than zero")
         self.client = client
         self.captcha_files = captcha_files
         self.view = view
         self.max_attempts = max_attempts
+        self.max_image_refreshes = max_image_refreshes
 
     def login_manual(self) -> None:
         challenge = self.client.start_login()
@@ -66,12 +70,27 @@ class AuthController:
         )
 
     def _request_captcha(self, challenge: CaptchaChallenge, attempt: int) -> str:
-        try:
-            image = self.client.download_captcha(challenge)
-        except CaptchaImageUnavailableError:
-            self.view.show_error("Ảnh CAPTCHA chưa sẵn sàng, đang làm mới.")
-            refreshed = self.client.refresh_captcha()
-            image = self.client.download_captcha(refreshed)
+        current = challenge
+        for refresh_count in range(self.max_image_refreshes + 1):
+            try:
+                image = self.client.download_captcha(current)
+                break
+            except CaptchaImageUnavailableError as exc:
+                if refresh_count >= self.max_image_refreshes:
+                    raise CaptchaImageUnavailableError(
+                        "Website nguồn không tạo được ảnh CAPTCHA sau "
+                        f"{self.max_image_refreshes} lần làm mới. "
+                        "Hãy chờ một lúc rồi chạy lại.",
+                        status_code=exc.status_code,
+                    ) from exc
+                next_refresh = refresh_count + 1
+                self.view.show_error(
+                    "Ảnh CAPTCHA chưa sẵn sàng, đang làm mới "
+                    f"({next_refresh}/{self.max_image_refreshes})."
+                )
+                current = self.client.refresh_captcha()
+        else:  # pragma: no cover - the bounded loop always breaks or raises
+            raise AssertionError("captcha refresh loop ended unexpectedly")
         path = self.captcha_files.save(image)
         try:
             return self.view.request_captcha(path, attempt, self.max_attempts)

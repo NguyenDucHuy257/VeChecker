@@ -48,6 +48,21 @@ def test_candidate_generation() -> None:
         LookupController.create_candidates("   ")
 
 
+@pytest.mark.parametrize(
+    "value",
+    [
+        "37ABCD12",
+        "37A1234567",
+        "37A12-345",
+        "37A12345X",
+        "ABC",
+    ],
+)
+def test_candidate_generation_rejects_unproven_formats(value) -> None:
+    with pytest.raises(InvalidPlateError):
+        LookupController.create_candidates(value)
+
+
 def test_base_plate_runs_both_candidates_and_returns_success(tmp_path) -> None:
     fake = FakeClient([VEHICLE_T, VehicleNotFoundError()])
     lookup, repository = controller(tmp_path, fake)
@@ -98,13 +113,28 @@ def test_base_plate_waits_between_source_candidates(tmp_path) -> None:
     assert delays == [2.0]
 
 
-def test_all_invalid_returns_invalid(tmp_path) -> None:
+def test_local_invalid_returns_invalid_without_calling_source(tmp_path) -> None:
+    fake = FakeClient([])
+    lookup, repository = controller(tmp_path, fake)
+
+    result = lookup.lookup("37ABCD12")
+
+    assert result.status is LookupStatus.INVALID
+    assert fake.plates == []
+    rows = repository.list_all()
+    assert len(rows) == 1
+    assert rows[0].status is LookupStatus.INVALID
+    assert rows[0].error_code == "INVALID_PLATE"
+
+
+def test_source_can_still_reject_valid_shaped_candidates(tmp_path) -> None:
     fake = FakeClient([InvalidPlateError(), InvalidPlateError()])
     lookup, _ = controller(tmp_path, fake)
 
-    result = lookup.lookup("BAD")
+    result = lookup.lookup("00A00000")
 
     assert result.status is LookupStatus.INVALID
+    assert fake.plates == ["00A00000T", "00A00000V"]
 
 
 def test_source_failure_is_recorded_and_raised(tmp_path) -> None:

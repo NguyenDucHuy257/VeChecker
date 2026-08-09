@@ -62,6 +62,8 @@ Copy-Item tests\live_plates.example.txt tests\live_plates.txt
 
 Input chưa có đuôi sẽ được thử lần lượt với `T` và `V`. Input đã có đuôi `T/V` chỉ được tra cứu một lần.
 
+Định dạng đã được HAR và UAT xác nhận là `2 số + 1 chữ + 5 số`, có thể kèm đuôi `T/V`. Input khác dạng được ghi `INVALID` ngay tại ứng dụng và không gửi lên website nguồn.
+
 Làm sạch response HTML từ HAR để kiểm tra chẩn đoán:
 
 ```powershell
@@ -76,7 +78,7 @@ Output nằm trong `runtime/sanitized_har` và đã được Git ignore. Script 
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-Baseline ngày 09/08/2026: `94 passed`. `compileall` và `pip check` cũng đã pass.
+Baseline ngày 09/08/2026: `105 passed`. `compileall` và `pip check` cũng đã pass.
 
 Fixture trong `tests/fixtures/sanitized` là dữ liệu tổng hợp, không chứa credential hoặc dữ liệu phương tiện từ HAR.
 
@@ -92,6 +94,10 @@ Các trạng thái lookup:
 - `ERROR`
 
 `SUCCESS` chỉ được ghi khi đủ loại phương tiện, nhãn hiệu và hạn kiểm định. Response thiếu selector hoặc ngày hợp lệ được ghi nhận là lỗi parser, không trả dữ liệu một phần.
+
+Lookup gặp HTTP `500`, `502`, `503` hoặc `504` sẽ thử lại tối đa ba lượt. Mỗi lượt luôn GET form WebForms mới trước khi POST lại candidate; không tái sử dụng hidden state cũ.
+
+Nếu URL ảnh CAPTCHA trả `404`, client thử tải lại và controller yêu cầu website sinh ảnh mới tối đa ba lần. Lỗi ảnh không làm mất lượt nhập CAPTCHA của người vận hành.
 
 ## Nghiệm thu
 

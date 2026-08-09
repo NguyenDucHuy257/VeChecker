@@ -54,6 +54,9 @@ class WebFormsClient:
     LOOKUP_PATH = "ThongTinPT.aspx"
     CAPTCHA_DOWNLOAD_ATTEMPTS = 3
     CAPTCHA_RETRY_DELAY_SECONDS = 0.5
+    LOOKUP_HTTP_ATTEMPTS = 3
+    LOOKUP_RETRY_DELAY_SECONDS = 1.0
+    RETRYABLE_LOOKUP_STATUSES = frozenset({500, 502, 503, 504})
 
     def __init__(
         self,
@@ -100,7 +103,7 @@ class WebFormsClient:
         self._login_state = None
         self._captcha_url = None
         response = self._request("GET", self.login_url)
-        self._raise_for_status(response)
+        self._raise_for_status(response, operation="GET trang đăng nhập")
         self._update_login_form(response)
         assert self._captcha_url is not None
         return CaptchaChallenge(self._captcha_url)
@@ -124,7 +127,7 @@ class WebFormsClient:
             headers=self._form_headers(self.login_url),
             allow_redirects=False,
         )
-        self._raise_for_status(response)
+        self._raise_for_status(response, operation="POST refresh CAPTCHA")
         self._update_login_form(response)
         assert self._captcha_url is not None
         return CaptchaChallenge(self._captcha_url)
@@ -148,9 +151,10 @@ class WebFormsClient:
         if int(response.status_code) == 404:
             raise CaptchaImageUnavailableError(
                 "Ảnh CAPTCHA chưa sẵn sàng sau "
-                f"{self.CAPTCHA_DOWNLOAD_ATTEMPTS} lần tải (HTTP 404)."
+                f"{self.CAPTCHA_DOWNLOAD_ATTEMPTS} lần tải (HTTP 404).",
+                status_code=404,
             )
-        self._raise_for_status(response)
+        self._raise_for_status(response, operation="GET ảnh CAPTCHA")
         content = bytes(response.content)
         if not content:
             raise SourceParseError("Website trả ảnh CAPTCHA rỗng.")
@@ -194,7 +198,7 @@ class WebFormsClient:
                 f"Website trả redirect đăng nhập không được hỗ trợ: HTTP {response.status_code}."
             )
 
-        self._raise_for_status(response)
+        self._raise_for_status(response, operation="POST đăng nhập")
         try:
             page_error = parse_login_error(
                 response.content,
@@ -219,10 +223,28 @@ class WebFormsClient:
         if not self.authenticated:
             raise SessionExpiredError("Chưa đăng nhập hoặc phiên đã hết hạn.")
 
+        for attempt in range(1, self.LOOKUP_HTTP_ATTEMPTS + 1):
+            try:
+                return self._lookup_candidate_once(plate)
+            except SourceHttpError as exc:
+                if (
+                    exc.status_code not in self.RETRYABLE_LOOKUP_STATUSES
+                ):
+                    raise
+                if attempt >= self.LOOKUP_HTTP_ATTEMPTS:
+                    raise SourceHttpError(
+                        f"{exc} Đã thử {self.LOOKUP_HTTP_ATTEMPTS} lần.",
+                        status_code=exc.status_code,
+                    ) from exc
+                sleep(self.LOOKUP_RETRY_DELAY_SECONDS * attempt)
+
+        raise AssertionError("lookup retry loop ended unexpectedly")
+
+    def _lookup_candidate_once(self, plate: str) -> VehicleResult:
         form_response = self._request("GET", self.lookup_url)
         if 300 <= int(form_response.status_code) < 400:
             self._handle_lookup_redirect(form_response)
-        self._raise_for_status(form_response)
+        self._raise_for_status(form_response, operation="GET form tra cứu")
         if self._looks_like_login(form_response.content):
             self.authenticated = False
             raise SessionExpiredError("Phiên nguồn đã hết hạn.")
@@ -247,7 +269,7 @@ class WebFormsClient:
 
         if 300 <= int(result_response.status_code) < 400:
             self._handle_lookup_redirect(result_response)
-        self._raise_for_status(result_response)
+        self._raise_for_status(result_response, operation="POST tra cứu")
 
         if self._looks_like_login(result_response.content):
             self.authenticated = False
@@ -346,10 +368,13 @@ class WebFormsClient:
             raise SourceNetworkError("Không kết nối được website nguồn.") from exc
 
     @staticmethod
-    def _raise_for_status(response: Any) -> None:
+    def _raise_for_status(response: Any, *, operation: str) -> None:
         status = int(response.status_code)
         if status < 200 or status >= 300:
-            raise SourceHttpError(f"Website nguồn trả HTTP {status}.")
+            raise SourceHttpError(
+                f"Website nguồn trả HTTP {status} khi {operation}.",
+                status_code=status,
+            )
 
     @staticmethod
     def _looks_like_login(content: bytes | str) -> bool:
@@ -380,7 +405,8 @@ class WebFormsClient:
             self.authenticated = False
             raise SessionExpiredError("Phiên nguồn đã hết hạn.")
         raise SourceHttpError(
-            f"Website trả redirect tra cứu không mong đợi: HTTP {response.status_code}."
+            f"Website trả redirect tra cứu không mong đợi: HTTP {response.status_code}.",
+            status_code=int(response.status_code),
         )
 
     def _find_expected_form(

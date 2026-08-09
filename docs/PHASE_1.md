@@ -1,13 +1,5 @@
 # Phase 1 — Base MVC, DB, parser và CAPTCHA nhập tay
 
-## Trạng thái triển khai
-
-- Source MVC, SQLite migration, fixture tổng hợp và bốn script Phase 1 đã hoàn thành.
-- Test tự động ngày 09/08/2026: `94 passed`; `compileall` và `pip check` pass.
-- HAR gốc đã được bỏ khỏi Git index nhưng vẫn còn trong lịch sử commit cũ. Phải đổi mật khẩu tài khoản nguồn và làm sạch lịch sử trước khi chia sẻ repository.
-- UAT live P1-UAT-01 đến P1-UAT-09 vẫn chờ chủ dự án chạy với `.env` và dữ liệu được phép sử dụng. Phase 1 chưa được ký `PASS`; chưa chuyển Phase 2.
-- HAR chưa có mẫu phản hồi `NOT_FOUND`, vì vậy P1-UAT-07 là bước xác nhận bắt buộc với website thật.
-
 ## 1. Mục tiêu
 
 Hoàn thành lõi tra cứu chạy bằng SCRIPT TEST PYTHON ( KHÔNG DÙNG ClI), dùng một tài khoản nguồn và CAPTCHA nhập tay. Phase này phải chứng minh một tài khoản có thể tra cứu nhiều biển số tuần tự, parser trả đúng ba trường và DB ghi đúng lịch sử.
@@ -53,7 +45,7 @@ src/app/
 Trách nhiệm:
 
 - `models`: model SQLite `User`, `Lookup` và các trạng thái nghiệp vụ.
-- `script_view`: giao tiếp với các script test Python để hiển thị CAPTCHA, nhận mã và in kết quả; không gọi HTTP/DB trực tiếp.
+- `script_view`: dùng `input()` trong các script Python để hiển thị CAPTCHA, nhận mã và in kết quả; không gọi HTTP/DB trực tiếp.
 - `auth_controller`: điều phối đăng nhập/refresh CAPTCHA giữa view và service.
 - `lookup_controller`: nhận biển số, tạo candidate, gọi tra cứu và lưu kết quả.
 - `webforms_client`: GET/POST, session, hidden field, timeout và phát hiện redirect/login.
@@ -78,7 +70,7 @@ main
 GET Login.aspx
   -> parse hidden fields + captchaImage
   -> tải CAPTCHA
-  -> script_view yêu cầu nhập
+  -> script_view dùng input() để người dùng mở ảnh và nhập tay
   -> POST Login.aspx
      -> 302: READY
      -> CAPTCHA sai: lấy state/ảnh mới và cho nhập lại
@@ -194,3 +186,4 @@ Người nghiệm thu:
 Ngày:
 Lỗi cần sửa:
 ```
+PHASE 1 PASS

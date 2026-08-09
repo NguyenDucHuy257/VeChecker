@@ -292,6 +292,98 @@ def test_lookup_success_uses_fresh_form_state_and_raw_plate() -> None:
     assert session.calls[1][2]["allow_redirects"] is False
 
 
+def test_lookup_500_retries_with_a_fresh_get_and_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    delays: list[float] = []
+    monkeypatch.setattr("app.services.webforms_client.sleep", delays.append)
+    retry_form = fixture("lookup_form.html").replace(
+        b"lookup-synthetic-state",
+        b"retry-lookup-state",
+    )
+    session = FakeSession(
+        [
+            FakeResponse(fixture("lookup_form.html")),
+            FakeResponse(status=500),
+            FakeResponse(retry_form),
+            FakeResponse(fixture("lookup_success_single.html")),
+        ]
+    )
+    client = make_client(session)
+    client.authenticated = True
+
+    result = client.lookup_candidate("00A00000T")
+
+    assert result.brand == "NHÃN HIỆU MẪU"
+    assert [call[0] for call in session.calls] == ["GET", "POST", "GET", "POST"]
+    assert session.calls[1][2]["data"]["__VIEWSTATE"] == "lookup-synthetic-state"
+    assert session.calls[3][2]["data"]["__VIEWSTATE"] == "retry-lookup-state"
+    assert delays == [1.0]
+
+
+def test_lookup_persistent_500_stops_after_three_attempts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    delays: list[float] = []
+    monkeypatch.setattr("app.services.webforms_client.sleep", delays.append)
+    session = FakeSession([FakeResponse(status=500) for _ in range(3)])
+    client = make_client(session)
+    client.authenticated = True
+
+    with pytest.raises(SourceHttpError) as captured:
+        client.lookup_candidate("00A00000T")
+
+    assert captured.value.status_code == 500
+    assert "GET form tra cứu" in str(captured.value)
+    assert "Đã thử 3 lần" in str(captured.value)
+    assert [call[0] for call in session.calls] == ["GET", "GET", "GET"]
+    assert delays == [1.0, 2.0]
+
+
+def test_lookup_persistent_post_500_reports_the_failed_operation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("app.services.webforms_client.sleep", lambda _: None)
+    responses = []
+    for _ in range(3):
+        responses.extend(
+            [FakeResponse(fixture("lookup_form.html")), FakeResponse(status=500)]
+        )
+    session = FakeSession(responses)
+    client = make_client(session)
+    client.authenticated = True
+
+    with pytest.raises(SourceHttpError) as captured:
+        client.lookup_candidate("00A00000T")
+
+    assert captured.value.status_code == 500
+    assert "POST tra cứu" in str(captured.value)
+    assert "Đã thử 3 lần" in str(captured.value)
+    assert [call[0] for call in session.calls] == [
+        "GET",
+        "POST",
+        "GET",
+        "POST",
+        "GET",
+        "POST",
+    ]
+
+
+def test_lookup_400_is_not_retried(monkeypatch: pytest.MonkeyPatch) -> None:
+    delays: list[float] = []
+    monkeypatch.setattr("app.services.webforms_client.sleep", delays.append)
+    session = FakeSession([FakeResponse(status=400)])
+    client = make_client(session)
+    client.authenticated = True
+
+    with pytest.raises(SourceHttpError) as captured:
+        client.lookup_candidate("00A00000T")
+
+    assert captured.value.status_code == 400
+    assert len(session.calls) == 1
+    assert delays == []
+
+
 @pytest.mark.parametrize(
     ("fixture_name", "exception_type"),
     [

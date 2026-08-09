@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from time import perf_counter, sleep
 from collections.abc import Callable
 
@@ -15,6 +16,9 @@ from app.services.errors import (
 )
 from app.services.vr_parser import VehicleResult
 from app.services.webforms_client import WebFormsClient
+
+
+_PLATE_PATTERN = re.compile(r"^[0-9]{2}[A-Z][0-9]{5}(?:[TV])?$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,12 +80,22 @@ class LookupController:
     @classmethod
     def create_candidates(cls, value: str) -> tuple[str, ...]:
         normalized = cls.normalize_plate(value)
+        if not cls.is_valid_plate(normalized):
+            raise InvalidPlateError(
+                "Biển số phải có dạng 2 số, 1 chữ, 5 số và có thể kèm đuôi T/V."
+            )
         if normalized.endswith(("T", "V")):
             return (normalized,)
         return (f"{normalized}T", f"{normalized}V")
 
+    @staticmethod
+    def is_valid_plate(value: str) -> bool:
+        return _PLATE_PATTERN.fullmatch(value) is not None
+
     def lookup(self, input_plate: str) -> LookupRunResult:
         normalized = self.normalize_plate(input_plate)
+        if not self.is_valid_plate(normalized):
+            return self._record_local_invalid(normalized)
         results: list[CandidateResult] = []
 
         for candidate_index, candidate in enumerate(self.create_candidates(normalized)):
@@ -102,6 +116,28 @@ class LookupController:
             results.append(result)
 
         return LookupRunResult(normalized, tuple(results))
+
+    def _record_local_invalid(self, normalized: str) -> LookupRunResult:
+        row = self.repository.create(
+            user_id=self.user_id,
+            input_plate=normalized,
+            queried_plate=normalized,
+        )
+        self.repository.mark_running(row.id)
+        saved = self.repository.finish(
+            row.id,
+            status=LookupStatus.INVALID,
+            error_code=ErrorCode.INVALID_PLATE.value,
+            duration_ms=0,
+        )
+        attempt = CandidateResult(
+            saved.id,
+            normalized,
+            saved.status,
+            error_code=saved.error_code,
+            duration_ms=0,
+        )
+        return LookupRunResult(normalized, (attempt,))
 
     def _lookup_one(
         self,
