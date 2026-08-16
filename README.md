@@ -24,8 +24,8 @@ Copy-Item .env.example .env
 
 Điền các giá trị thật vào `.env`:
 
-- `VR_USERNAME`, `VR_PASSWORD`: account nguồn dùng chung; chỉ admin điều khiển
-  đăng nhập qua Telegram, user không được xem credential.
+- `VR_USERNAME`, `VR_PASSWORD`: tùy chọn cho script Phase 1. Telegram bot có thể
+  khởi động khi để trống; admin nhập account nguồn dùng chung bằng `/login`.
 - `TELEGRAM_ADMIN_IDS`: một hoặc nhiều numeric ID, cách nhau bằng dấu phẩy.
 - `TELEGRAM_BOT_TOKEN`: token lấy từ BotFather; không ghi vào log hoặc Git.
 - `CANDIDATE_DELAY_SECONDS=2`: khoảng nghỉ tối thiểu giữa hai candidate `T/V`.
@@ -45,7 +45,8 @@ mới fallback nhập tay. Chi tiết accuracy và giới hạn đánh giá nằ
 ```
 
 User mới gửi `/start`, sau đó admin dùng `/approve <telegram_id>`. Admin dùng
-`/login` để khởi tạo account nguồn đã cấu hình. User ACTIVE chỉ tra cứu bằng
+`/login`, nhập username/password để khởi tạo session chung; bot xóa ngay hai tin
+credential và chỉ giữ chúng trong RAM. User ACTIVE chỉ tra cứu bằng
 `/tracuu <biển_số>`, `/traacuu <biển_số>` hoặc gửi trực tiếp biển số. Khi session
 hết hạn, bot tự đăng nhập lại rồi retry đúng candidate một lần.
 
@@ -54,7 +55,8 @@ Lệnh user: `/help`, `/status`, `/tracuu`, `/traacuu`. Lệnh admin bổ sung `
 `/users`. Nội dung `/help` tự thay đổi theo role và trạng thái.
 
 Bot luôn tạo đúng một source worker để không có request WebForms chạy đồng thời.
-`JOB_QUEUE_SIZE=20` giới hạn tổng số job đã nhận; các job được xử lý FIFO.
+`JOB_QUEUE_SIZE=20` giới hạn tổng số job đã nhận; các job được xử lý FIFO. Admin
+`/logout` chờ job đang chạy hoàn tất, chặn job mới và không cho job còn chờ gọi nguồn.
 
 Đánh giá model trên manifest TSV riêng tư (`đường_dẫn_ảnh<TAB>nhãn`), tối thiểu 50 mẫu:
 
@@ -114,7 +116,7 @@ Output nằm trong `runtime/sanitized_har` và đã được Git ignore. Script 
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-Baseline kỹ thuật Phase 3 ngày 16/08/2026: `193 passed`. `compileall` và
+Baseline kỹ thuật Phase 3 ngày 16/08/2026: `194 passed`. `compileall` và
 `pip check` đều pass.
 
 Phase 3 bổ sung retry timeout/network/HTTP 5xx theo cấu hình, recovery job sau

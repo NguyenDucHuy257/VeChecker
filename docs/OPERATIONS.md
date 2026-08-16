@@ -13,9 +13,9 @@ không nhận job mới. Khi khởi động lại, migration chạy tự động
 `QUEUED/RUNNING` và Telegram update còn `ACCEPTED` từ process cũ được kết thúc
 thành lỗi `SOURCE_ERROR`, không bị kẹt hoặc chạy lại ngoài ý muốn.
 
-Sau restart, source session dùng chung trong RAM bị mất. Admin dùng `/login` để
-đăng nhập account đã cấu hình trong `/etc/dktle.env`, sau đó kiểm tra `/status`
-có `source_ready=True`. User không nhập hoặc biết credential nguồn.
+Sau restart, source session dùng chung trong RAM bị mất nhưng bot vẫn khởi động.
+Admin dùng `/login`, nhập username/password nguồn rồi kiểm tra `/status` có
+`source_ready=True`. User không nhập hoặc biết credential nguồn.
 
 ## Retry nguồn
 
@@ -30,7 +30,9 @@ có `source_ready=True`. User không nhập hoặc biết credential nguồn.
 - Với Telegram ở chế độ CAPTCHA `auto`, khi lookup phát hiện session chung hết
   hạn, bot dùng credential còn trong RAM để đăng nhập lại rồi retry đúng candidate
   đó một lần. Nếu session tiếp tục hết hạn, job dừng để tránh vòng lặp vô hạn.
-- `/logout` hoặc restart đóng session; admin dùng `/login` để khởi tạo lại.
+- `/logout` đặt hàng rào chặn job mới, chờ job đang chạy hoàn tất, đóng session,
+  xóa credential khỏi RAM và không cho các job còn chờ gọi nguồn. Admin dùng
+  `/login` để khởi tạo lại.
 - Telegram chỉ chạy một worker nguồn. `JOB_QUEUE_SIZE=20` cho phép tối đa 20 job
   đã nhận (gồm job đang chạy); job được xử lý lần lượt, không truy cập đồng thời.
 

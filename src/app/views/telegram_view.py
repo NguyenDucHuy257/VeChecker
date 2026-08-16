@@ -35,7 +35,7 @@ Biển số hợp lệ: 2 số + 1 chữ + 5 số, có thể kèm T/V. Không c�
     def admin_help() -> str:
         return """HƯỚNG DẪN ADMIN
 
-Admin có toàn bộ quyền user và đại diện quản lý một session nguồn dùng chung. Credential nguồn lấy từ cấu hình server, không hiển thị cho Telegram user.
+Admin có toàn bộ quyền user và đại diện quản lý một session nguồn dùng chung. Chỉ admin nhập credential; Telegram user không được xem hoặc nhập.
 
 Lệnh quản trị:
 /users — liệt kê Telegram ID, role và trạng thái
@@ -46,7 +46,8 @@ Lệnh quản trị:
 Không thể revoke/block admin ACTIVE cuối cùng. User phải gửi /start ít nhất một lần trước khi xuất hiện trong /users.
 
 Lệnh sử dụng cá nhân:
-/login — đăng nhập account nguồn đã cấu hình trên server
+/login — nhập username/password để mở session nguồn dùng chung
+/cancel — hủy bước nhập credential
 /status — trạng thái session dùng chung và queue
 /tracuu <biển_số> — tra cứu; cũng có thể gửi biển số trực tiếp
 /traacuu <biển_số> — bí danh của /tracuu
@@ -54,7 +55,7 @@ Lệnh sử dụng cá nhân:
 /captcha <mã> và /refresh_captcha — fallback CAPTCHA nhập tay
 /help — mở hướng dẫn này
 
-Mọi yêu cầu dùng chung một hàng đợi và chỉ một job chạm website nguồn tại một thời điểm. Nếu session hết hạn, bot tự đăng nhập lại và tiếp tục tra cứu."""
+Tin nhắn username/password được bot xóa ngay và credential chỉ giữ trong RAM. Mọi yêu cầu dùng chung một hàng đợi và chỉ một job chạm website nguồn tại một thời điểm. Nếu session hết hạn, bot tự đăng nhập lại và tiếp tục tra cứu. `/logout` chờ job đang chạy xong rồi đóng nguồn và chặn các job còn lại."""
 
     @staticmethod
     def pending_help() -> str:

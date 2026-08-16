@@ -580,3 +580,9 @@ def test_reset_authentication_clears_cookies_but_keeps_client_reusable() -> None
     assert client.authenticated is False
     assert len(session.cookies) == 0
     assert client.username == "synthetic-user"
+
+    client.set_credentials("replacement-user", "replacement-password")
+    assert client.username == "replacement-user"
+    client.clear_credentials()
+    assert client.username == ""
+    assert client.password == ""

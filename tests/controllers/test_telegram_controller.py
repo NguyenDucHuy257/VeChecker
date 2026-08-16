@@ -47,8 +47,9 @@ class FakeSource:
     def ready_for(self, _telegram_user_id):
         return self.ready
 
-    def start_login(self):
+    def login(self, username, password):
         self.login_count += 1
+        self.last_credentials = (username, password)
         self.ready = True
         self.authenticated_users = 1
         return SourceLoginResponse("ready", None, True)
@@ -196,11 +197,15 @@ def test_only_admin_can_login_and_logout_shared_source(tmp_path) -> None:
     controller.handle_update(telegram_update(1, 2, "/login"))
     controller.handle_update(telegram_update(2, 2, "/logout"))
     controller.handle_update(telegram_update(3, 1, "/login"))
-    controller.handle_update(telegram_update(4, 1, "/logout"))
+    controller.handle_update(telegram_update(4, 1, "shared-user"))
+    controller.handle_update(telegram_update(5, 1, "shared-password"))
+    controller.handle_update(telegram_update(6, 1, "/logout"))
 
     source = controller.source_pool
     assert source.login_count == 1
+    assert source.last_credentials == ("shared-user", "shared-password")
     assert source.logout_count == 1
+    assert bot.deleted == [(1, 4), (1, 5)]
     assert bot.messages[0][1] == "Lệnh này chỉ dành cho admin."
     assert bot.messages[1][1] == "Lệnh này chỉ dành cho admin."
     assert bot.messages[-1][1] == "Đã đăng xuất phiên nguồn."

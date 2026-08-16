@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from contextlib import nullcontext
 from dataclasses import dataclass, field
-from threading import Lock, RLock
+from threading import Event, Lock, RLock
 from typing import Callable
 
 from app.controllers.lookup_controller import LookupController
@@ -98,10 +98,13 @@ class SourcePool:
         self._pending_challenge: CaptchaChallenge | None = None
         self._captcha_attempt = 1
         self._automatic_relogin_enabled = True
+        self._logout_requested = Event()
 
     @property
     def ready(self) -> bool:
-        return all(client.authenticated for client in self.clients)
+        return not self._logout_requested.is_set() and all(
+            client.authenticated for client in self.clients
+        )
 
     @property
     def authenticated_workers(self) -> int:
@@ -117,18 +120,31 @@ class SourcePool:
         return self.ready
 
     def close(self) -> None:
+        self._logout_requested.set()
         self._automatic_relogin_enabled = False
         for client in self.clients:
             client.close()
 
     def logout(self) -> bool:
+        # Set the barrier before waiting for a running lookup. New submissions
+        # are rejected immediately; queued handlers will fail without touching
+        # the website once the current lookup releases the locks.
+        self._logout_requested.set()
         with self._login_lock, self._source_guard():
-            was_ready = self.ready
+            was_ready = any(client.authenticated for client in self.clients)
             self._automatic_relogin_enabled = False
             self._clear_pending()
             for client in self.clients:
-                client.reset_authentication()
+                client.clear_credentials()
             return was_ready
+
+    def login(self, username: str, password: str) -> SourceLoginResponse:
+        with self._login_lock, self._source_guard():
+            self._logout_requested.clear()
+            self._automatic_relogin_enabled = True
+            for client in self.clients:
+                client.set_credentials(username, password)
+            return self._start_login_locked()
 
     def handler_factory(self, worker_index: int) -> JobHandler:
         if worker_index >= len(self.clients):
@@ -139,6 +155,10 @@ class SourcePool:
             guard = self._source_lock if self._source_lock is not None else nullcontext()
             with self._login_lock, guard:
                 try:
+                    if self._logout_requested.is_set():
+                        raise SourceNotReadyError(
+                            "Admin đã đăng xuất session nguồn dùng chung."
+                        )
                     if not client.authenticated:
                         self._reauthenticate_locked()
                     lookup_client = _ReauthenticatingClient(
@@ -174,6 +194,11 @@ class SourcePool:
 
     def start_login(self) -> SourceLoginResponse:
         with self._login_lock, self._source_guard():
+            if not all(client.username and client.password for client in self.clients):
+                raise SourceNotReadyError(
+                    "Chưa có credential nguồn; admin cần dùng /login."
+                )
+            self._logout_requested.clear()
             self._automatic_relogin_enabled = True
             return self._start_login_locked()
 

@@ -52,7 +52,7 @@ def create_telegram_application(
 ) -> TelegramApplication:
     config = load_config(
         env_file,
-        require_vr_credentials=True,
+        require_vr_credentials=False,
         require_telegram_token=True,
     )
     configure_logging(config.log_level, secrets=config.log_secrets)

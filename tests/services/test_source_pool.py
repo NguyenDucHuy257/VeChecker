@@ -1,4 +1,5 @@
 from datetime import date
+from threading import Event, Thread
 
 import pytest
 
@@ -30,6 +31,8 @@ class FakeSourceClient:
         self.lookup_plates = []
         self.closed = False
         self.start_login_count = 0
+        self.username = "synthetic-user"
+        self.password = "synthetic-password"
 
     def start_login(self):
         self.start_login_count += 1
@@ -67,6 +70,20 @@ class FakeSourceClient:
 
     def reset_authentication(self):
         self.authenticated = False
+
+    def set_credentials(self, username, password):
+        self.reset_authentication()
+        self.username = username
+        self.password = password
+        self.source_username = username
+        self.source_password = password
+
+    def clear_credentials(self):
+        self.reset_authentication()
+        self.username = ""
+        self.password = ""
+        self.source_username = ""
+        self.source_password = ""
 
 
 def make_pool(tmp_path, clients, messages):
@@ -193,6 +210,60 @@ def test_shared_session_auto_reauthenticates_and_retries_same_candidate(tmp_path
     with pytest.raises(SourceNotReadyError):
         pool.handler_factory(0)(LookupJob(2, 1001, 1, 5001, "00A00000T"))
     assert client.start_login_count == 2
+
+
+def test_admin_logout_waits_for_running_lookup_and_blocks_queued_jobs(tmp_path) -> None:
+    database = Database(tmp_path / "shared-logout-barrier.sqlite3")
+    database.initialize([1001, 1002])
+    lookup_started = Event()
+    allow_lookup_to_finish = Event()
+    logout_finished = Event()
+
+    class BlockingClient(FakeSourceClient):
+        def lookup_candidate(self, plate):
+            self.lookup_plates.append(plate)
+            lookup_started.set()
+            assert allow_lookup_to_finish.wait(timeout=2)
+            return VEHICLE
+
+    client = BlockingClient()
+    client.authenticated = True
+    pool = SourcePool(
+        [client],
+        LookupRepository(database),
+        lambda *_: None,
+        TelegramView(),
+        candidate_delay_seconds=0,
+        captcha_mode="auto",
+        recognizer=FakeRecognizer([CaptchaPrediction("UNUSED", 0.99)]),
+    )
+    handler = pool.handler_factory(0)
+    running = Thread(
+        target=handler,
+        args=(LookupJob(1, 1001, 1, 5001, "00A00000T"),),
+    )
+    running.start()
+    assert lookup_started.wait(timeout=1)
+
+    def log_out():
+        pool.logout()
+        logout_finished.set()
+
+    logout_thread = Thread(target=log_out)
+    logout_thread.start()
+    assert not logout_finished.wait(timeout=0.05)
+    assert pool.ready_for(1002) is False
+
+    allow_lookup_to_finish.set()
+    running.join(timeout=2)
+    logout_thread.join(timeout=2)
+    assert not running.is_alive()
+    assert not logout_thread.is_alive()
+    assert logout_finished.is_set()
+
+    with pytest.raises(SourceNotReadyError):
+        handler(LookupJob(2, 1002, 2, 5002, "00A00000V"))
+    assert client.lookup_plates == ["00A00000T"]
 
 
 def test_manual_mode_never_calls_recognizer(tmp_path) -> None:

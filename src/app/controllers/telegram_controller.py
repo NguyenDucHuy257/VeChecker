@@ -23,6 +23,12 @@ class TelegramSender(Protocol):
     def delete_message(self, chat_id: int, message_id: int) -> None: ...
 
 
+@dataclass(slots=True, repr=False)
+class LoginDraft:
+    username: str | None = None
+    started_at: float = field(default_factory=monotonic)
+
+
 @dataclass(slots=True)
 class UserRateLimiter:
     minimum_interval_seconds: float
@@ -64,6 +70,8 @@ class TelegramController:
         self.bot = bot
         self.view = view
         self.rate_limiter = rate_limiter
+        self._login_drafts: dict[int, LoginDraft] = {}
+        self._login_drafts_lock = Lock()
 
     def handle_update(self, update: dict[str, Any]) -> None:
         update_id = update.get("update_id")
@@ -79,6 +87,7 @@ class TelegramController:
             return
         chat_id = chat.get("id")
         telegram_user_id = sender.get("id")
+        message_id = message.get("message_id")
         if not isinstance(chat_id, int) or not isinstance(telegram_user_id, int):
             return
         username = sender.get("username") if isinstance(sender.get("username"), str) else None
@@ -131,6 +140,7 @@ class TelegramController:
             if user.role is not UserRole.ADMIN:
                 self.bot.send_message(chat_id, "Lệnh này chỉ dành cho admin.")
                 return
+            self._clear_login_draft(telegram_user_id)
             logged_out = self.source_pool.logout()
             self.bot.send_message(
                 chat_id,
@@ -138,21 +148,36 @@ class TelegramController:
             )
             return
         if command == "/cancel":
-            self.bot.send_message(chat_id, "Không có thao tác đăng nhập cần hủy.")
+            if user.role is not UserRole.ADMIN:
+                self.bot.send_message(chat_id, "Lệnh này chỉ dành cho admin.")
+                return
+            if self._clear_login_draft(telegram_user_id):
+                self.bot.send_message(chat_id, "Đã hủy nhập thông tin đăng nhập.")
+            else:
+                self.bot.send_message(chat_id, "Không có thao tác đăng nhập cần hủy.")
             return
         if command == "/login":
             if user.role is not UserRole.ADMIN:
                 self.bot.send_message(chat_id, "Lệnh này chỉ dành cho admin.")
                 return
-            try:
-                response = self.source_pool.start_login()
-            except VrServiceError as exc:
-                self.bot.send_message(
-                    chat_id,
-                    f"Đăng nhập nguồn thất bại ({exc.code.value}). Vui lòng thử lại.",
-                )
-                return
-            self._send_login_response(chat_id, response)
+            with self._login_drafts_lock:
+                self._login_drafts[telegram_user_id] = LoginDraft()
+            self.bot.send_message(
+                chat_id,
+                "Gửi username tài khoản nguồn dùng chung. Bot sẽ xóa tin nhắn "
+                "ngay sau khi nhận. Dùng /cancel để hủy.",
+            )
+            return
+        if (
+            user.role is UserRole.ADMIN
+            and self._get_login_draft(telegram_user_id) is not None
+        ):
+            self._handle_login_secret(
+                telegram_user_id,
+                chat_id,
+                message_id if isinstance(message_id, int) else None,
+                text,
+            )
             return
         if command == "/status":
             self.bot.send_message(
@@ -239,6 +264,8 @@ class TelegramController:
                 self.bot.send_message(chat_id, "Không thể vô hiệu admin ACTIVE cuối cùng.")
                 return
             updated = self.users.update_status(target_id, desired)
+            if desired is not UserStatus.ACTIVE:
+                self._clear_login_draft(target_id)
             self.bot.send_message(
                 chat_id,
                 f"Đã cập nhật {updated.telegram_user_id} thành {updated.status.value}.",
@@ -259,6 +286,69 @@ class TelegramController:
                     "Trả lời bằng /captcha <mã>."
                 ),
             )
+
+    def _handle_login_secret(
+        self,
+        telegram_user_id: int,
+        chat_id: int,
+        message_id: int | None,
+        secret: str,
+    ) -> None:
+        draft = self._get_login_draft(telegram_user_id)
+        if draft is None:
+            return
+        if monotonic() - draft.started_at > 300:
+            self._clear_login_draft(telegram_user_id)
+            self._delete_sensitive_message(chat_id, message_id)
+            self.bot.send_message(chat_id, "Phiên nhập đăng nhập đã hết hạn. Dùng /login lại.")
+            return
+        value = secret.strip()
+        self._delete_sensitive_message(chat_id, message_id)
+        if not value:
+            self.bot.send_message(chat_id, "Giá trị không được để trống.")
+            return
+        if draft.username is None:
+            draft.username = value
+            self.bot.send_message(
+                chat_id,
+                "Đã nhận username. Gửi password; bot sẽ xóa tin nhắn ngay sau khi nhận.",
+            )
+            return
+
+        username = draft.username
+        self._clear_login_draft(telegram_user_id)
+        try:
+            response = self.source_pool.login(username, value)
+        except VrServiceError as exc:
+            self.bot.send_message(
+                chat_id,
+                f"Đăng nhập nguồn thất bại ({exc.code.value}). Dùng /login để thử lại.",
+            )
+            return
+        except ValueError as exc:
+            self.bot.send_message(chat_id, str(exc))
+            return
+        self._send_login_response(chat_id, response)
+
+    def _delete_sensitive_message(self, chat_id: int, message_id: int | None) -> None:
+        if message_id is None:
+            self.bot.send_message(chat_id, "Hãy xóa thủ công tin nhắn chứa thông tin đăng nhập.")
+            return
+        try:
+            self.bot.delete_message(chat_id, message_id)
+        except Exception:
+            self.bot.send_message(
+                chat_id,
+                "Bot không xóa được tin nhắn credential; hãy xóa thủ công ngay.",
+            )
+
+    def _get_login_draft(self, telegram_user_id: int) -> LoginDraft | None:
+        with self._login_drafts_lock:
+            return self._login_drafts.get(telegram_user_id)
+
+    def _clear_login_draft(self, telegram_user_id: int) -> bool:
+        with self._login_drafts_lock:
+            return self._login_drafts.pop(telegram_user_id, None) is not None
 
     def _send_access_state(self, chat_id: int, status: UserStatus) -> None:
         if status is UserStatus.ACTIVE:

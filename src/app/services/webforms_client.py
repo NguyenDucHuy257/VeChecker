@@ -117,6 +117,23 @@ class WebFormsClient:
         self._login_state = None
         self._captcha_url = None
 
+    def set_credentials(self, username: str, password: str) -> None:
+        """Replace the shared account after clearing all previous session state."""
+
+        username = username.strip()
+        if not username or not password:
+            raise ValueError("Tài khoản và mật khẩu nguồn không được để trống.")
+        self.reset_authentication()
+        self.username = username
+        self.password = password
+
+    def clear_credentials(self) -> None:
+        """Remove the shared account from memory on an explicit admin logout."""
+
+        self.reset_authentication()
+        self.username = ""
+        self.password = ""
+
     def start_login(self) -> CaptchaChallenge:
         self.authenticated = False
         self._login_state = None

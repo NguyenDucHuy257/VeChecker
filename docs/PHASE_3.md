@@ -125,7 +125,7 @@ Không bàn giao nếu còn lỗi làm sai kết quả, lộ bí mật, sai quy�
   FIFO, queue tối đa 20 job và tự đăng nhập lại khi session hết hạn.
 - Backup/restore SQLite cùng integrity check nằm ở `scripts/database_backup.py`.
 - Runbook/error code nằm trong `docs/OPERATIONS.md`.
-- Xác minh hiện tại: **193 passed**, `compileall` pass, `pip check` không có dependency lỗi.
+- Xác minh hiện tại: **194 passed**, `compileall` pass, `pip check` không có dependency lỗi.
 - DB vận hành đã backup, migrate schema v3 và đạt `PRAGMA integrity_check=ok`;
   không có lookup/update dở dang cần recovery tại thời điểm migrate.
 
