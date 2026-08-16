@@ -10,7 +10,7 @@ from app.controllers.telegram_controller import TelegramController, UserRateLimi
 from app.database import Database
 from app.logging_config import configure_logging
 from app.models import LookupRepository, TelegramUpdateRepository, UserRepository
-from app.services.source_pool import SourcePool
+from app.services.source_pool import UserSourcePool
 from app.services.captcha_onnx import OnnxCaptchaRecognizer
 from app.services.telegram_api import TelegramBotClient
 from app.services.telegram_polling import TelegramPollingService
@@ -24,7 +24,7 @@ class TelegramApplication:
     config: AppConfig
     database: Database
     bot: TelegramBotClient
-    source_pool: SourcePool
+    source_pool: UserSourcePool
     workers: WorkerService
     controller: TelegramController
     polling: TelegramPollingService
@@ -50,7 +50,11 @@ def create_telegram_application(
     *,
     bot: TelegramBotClient | None = None,
 ) -> TelegramApplication:
-    config = load_config(env_file, require_telegram_token=True)
+    config = load_config(
+        env_file,
+        require_vr_credentials=False,
+        require_telegram_token=True,
+    )
     configure_logging(config.log_level, secrets=config.log_secrets)
     database = Database(config.database_path)
     database.initialize(config.telegram_admin_ids)
@@ -64,20 +68,19 @@ def create_telegram_application(
         timeout_seconds=max(35.0, config.telegram_poll_timeout_seconds + 5.0),
     )
     view = TelegramView()
-    clients = [
-        WebFormsClient(
+    def client_factory(username: str, password: str) -> WebFormsClient:
+        return WebFormsClient(
             base_url=config.vr_base_url,
-            username=config.vr_username,
-            password=config.vr_password,
+            username=username,
+            password=password,
             timeout_seconds=config.request_timeout_seconds,
             verify_ssl=config.verify_ssl,
             request_attempts=config.source_request_attempts,
             retry_delay_seconds=config.source_retry_delay_seconds,
         )
-        for _ in range(config.max_workers)
-    ]
-    source_pool = SourcePool(
-        clients,
+
+    source_pool = UserSourcePool(
+        client_factory,
         LookupRepository(database),
         telegram_bot.send_message,
         view,

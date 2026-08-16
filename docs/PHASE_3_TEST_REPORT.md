@@ -4,7 +4,7 @@
 
 | Hạng mục | Kết quả |
 |---|---:|
-| Pytest | 182 passed |
+| Pytest | 185 passed |
 | Compile `src` và `scripts` | PASS |
 | `pip check` | PASS — không có dependency lỗi |
 | SQLite schema | v3 |
@@ -25,6 +25,9 @@
 - Queue đầy, rate limit, update trùng và input quá dài không tạo job sai.
 - Formatter che secret cả message và exception traceback.
 - Backup/restore SQLite round-trip và integrity check pass.
+- Hai user dùng hai account/client/session độc lập; logout hoặc session expiry của
+  một user không ảnh hưởng user khác.
+- Username/password messages được gọi xóa ngay và không xuất hiện trong bot response.
 
 ## Artifact vận hành
 

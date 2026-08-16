@@ -72,6 +72,12 @@ class TelegramBotClient:
             files={"photo": ("captcha.jpg", image, "image/jpeg")},
         )
 
+    def delete_message(self, chat_id: int, message_id: int) -> None:
+        self._call(
+            "deleteMessage",
+            json={"chat_id": chat_id, "message_id": message_id},
+        )
+
     def _call(self, method: str, *, poll: bool = False, **kwargs: Any) -> Any:
         url = f"https://api.telegram.org/bot{self.token}/{method}"
         kwargs.setdefault("timeout", self.timeout_seconds)

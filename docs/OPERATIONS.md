@@ -13,8 +13,8 @@ không nhận job mới. Khi khởi động lại, migration chạy tự động
 `QUEUED/RUNNING` và Telegram update còn `ACCEPTED` từ process cũ được kết thúc
 thành lỗi `SOURCE_ERROR`, không bị kẹt hoặc chạy lại ngoài ý muốn.
 
-Sau restart, admin dùng `/login` để đăng nhập lại các source worker và `/status`
-để kiểm tra `source_ready=True`.
+Sau restart, mọi source session trong RAM đều mất. Mỗi user dùng `/login` để đăng
+nhập lại account riêng và `/status` để kiểm tra `source_ready=True`.
 
 ## Retry nguồn
 
@@ -61,9 +61,9 @@ startup recovery được chạy lại.
 | `SOURCE_TIMEOUT` | Nguồn quá thời gian sau retry | Thử job mới sau |
 | `SOURCE_NETWORK_ERROR` | Mất kết nối sau retry | Kiểm tra mạng |
 | `SOURCE_HTTP_ERROR` | HTTP nguồn không hợp lệ | Kiểm tra status/log code |
-| `SESSION_EXPIRED` | Session worker hết hạn | Admin chạy `/login` |
-| `AUTH_FAILED` | Credential bị từ chối | Kiểm tra tài khoản nguồn |
-| `SOURCE_NOT_READY` | Worker chưa login | Admin chạy `/login` |
+| `SESSION_EXPIRED` | Session riêng của user hết hạn | User chạy `/login` |
+| `AUTH_FAILED` | Credential riêng bị từ chối | User kiểm tra account nguồn |
+| `SOURCE_NOT_READY` | User chưa login | User chạy `/login` |
 | `SOURCE_ERROR` | Lỗi bất ngờ hoặc job bị ngắt do restart | Kiểm tra log, gửi job mới |
 | `TELEGRAM_API_ERROR` | Telegram tạm lỗi | Polling tự chờ và thử lại |
 

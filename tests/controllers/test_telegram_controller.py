@@ -12,12 +12,16 @@ class FakeBot:
     def __init__(self) -> None:
         self.messages: list[tuple[int, str]] = []
         self.photos: list[tuple[int, bytes, str]] = []
+        self.deleted: list[tuple[int, int]] = []
 
     def send_message(self, chat_id, text):
         self.messages.append((chat_id, text))
 
     def send_photo(self, chat_id, image, *, caption=""):
         self.photos.append((chat_id, image, caption))
+
+    def delete_message(self, chat_id, message_id):
+        self.deleted.append((chat_id, message_id))
 
 
 class FakeWorkers:
@@ -36,24 +40,35 @@ class FakeWorkers:
 class FakeSource:
     def __init__(self, *, ready=True) -> None:
         self.ready = ready
-        self.authenticated_workers = 2 if ready else 0
+        self.authenticated_users = 1 if ready else 0
+        self.logins = []
+        self.logouts = []
 
-    def start_login(self):
-        return SourceLoginResponse(
-            "login",
-            SourceLoginPrompt(1, b"captcha-image", 1, 3),
-            False,
-        )
+    def ready_for(self, _telegram_user_id):
+        return self.ready
 
-    def submit_captcha(self, value):
+    def login(self, telegram_user_id, username, password):
+        self.logins.append((telegram_user_id, username, password))
+        self.ready = True
+        self.authenticated_users = 1
         return SourceLoginResponse("ready", None, True)
 
-    def refresh_captcha(self):
+    def submit_captcha(self, telegram_user_id, value):
+        return SourceLoginResponse("ready", None, True)
+
+    def refresh_captcha(self, telegram_user_id):
         return SourceLoginResponse(
             "refreshed",
             SourceLoginPrompt(1, b"new-image", 1, 3),
             False,
         )
+
+    def logout(self, telegram_user_id):
+        self.logouts.append(telegram_user_id)
+        was_ready = self.ready
+        self.ready = False
+        self.authenticated_users = 0
+        return was_ready
 
 
 def telegram_update(update_id, user_id, text, *, chat_type="private"):
@@ -62,6 +77,7 @@ def telegram_update(update_id, user_id, text, *, chat_type="private"):
         "message": {
             "chat": {"id": user_id, "type": chat_type},
             "from": {"id": user_id, "username": f"user{user_id}"},
+            "message_id": update_id,
             "text": text,
         },
     }
@@ -111,7 +127,7 @@ def test_admin_approves_user_and_direct_plate_is_enqueued(tmp_path) -> None:
 
 
 def test_revoke_and_block_take_effect_immediately(tmp_path) -> None:
-    controller, users, workers, _, _ = make_controller(tmp_path)
+    controller, users, workers, source, _ = make_controller(tmp_path)
     users.get_or_create_pending(2)
     users.update_status(2, UserStatus.ACTIVE)
 
@@ -122,6 +138,7 @@ def test_revoke_and_block_take_effect_immediately(tmp_path) -> None:
 
     assert workers.jobs == []
     assert users.get_by_telegram_id(2).status is UserStatus.BLOCKED
+    assert 2 in source.logouts
 
 
 def test_last_active_admin_cannot_be_blocked(tmp_path) -> None:
@@ -160,16 +177,33 @@ def test_queue_full_returns_busy(tmp_path) -> None:
     assert bot.messages[-1][1] == TelegramView.busy()
 
 
-def test_only_admin_can_request_login_and_receive_captcha(tmp_path) -> None:
+def test_active_user_login_secrets_are_deleted_and_logout_clears_session(tmp_path) -> None:
     controller, users, _, _, bot = make_controller(tmp_path, source_ready=False)
     users.get_or_create_pending(2)
     users.update_status(2, UserStatus.ACTIVE)
 
     controller.handle_update(telegram_update(1, 2, "/login"))
-    controller.handle_update(telegram_update(2, 1, "/login"))
+    controller.handle_update(telegram_update(2, 2, "private-user"))
+    controller.handle_update(telegram_update(3, 2, "private-password"))
+    controller.handle_update(telegram_update(4, 2, "/logout"))
 
-    assert bot.messages[0][1] == "Lệnh này chỉ dành cho admin."
-    assert bot.photos == [(1, b"captcha-image", "Worker 1 | CAPTCHA 1/3. Trả lời bằng /captcha <mã>.")]
+    source = controller.source_pool
+    assert source.logins == [(2, "private-user", "private-password")]
+    assert source.logouts == [2]
+    assert bot.deleted == [(2, 2), (2, 3)]
+    rendered = " ".join(text for _, text in bot.messages)
+    assert "private-user" not in rendered
+    assert "private-password" not in rendered
+    assert bot.messages[-1][1] == "Đã đăng xuất phiên nguồn."
+
+
+def test_pending_user_cannot_start_source_login(tmp_path) -> None:
+    controller, _, _, source, bot = make_controller(tmp_path, source_ready=False)
+
+    controller.handle_update(telegram_update(1, 2, "/login"))
+
+    assert source.logins == []
+    assert bot.messages[-1][1] == TelegramView.pending()
 
 
 def test_group_updates_are_ignored(tmp_path) -> None:

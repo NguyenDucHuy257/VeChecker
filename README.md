@@ -1,6 +1,8 @@
 # DKTLE — Phase 3
 
-Ứng dụng MVC dùng một tài khoản `app.vr.org.vn` để tra cứu qua Telegram, kiểm soát quyền bằng admin, xử lý qua hàng đợi worker giới hạn và lưu lịch sử vào SQLite.
+Ứng dụng MVC cho phép mỗi Telegram user dùng tài khoản `app.vr.org.vn` riêng,
+giữ WebForms session riêng để tra cứu nhiều lần, xử lý qua hàng đợi worker giới
+hạn và lưu lịch sử kết quả vào SQLite.
 
 ## Cấu trúc MVC
 
@@ -22,8 +24,8 @@ Copy-Item .env.example .env
 
 Điền các giá trị thật vào `.env`:
 
-- `VR_USERNAME`
-- `VR_PASSWORD`
+- `VR_USERNAME`, `VR_PASSWORD`: chỉ cần cho script Phase 1; Telegram không dùng
+  credential nguồn toàn cục.
 - `TELEGRAM_ADMIN_IDS`: một hoặc nhiều numeric ID, cách nhau bằng dấu phẩy.
 - `TELEGRAM_BOT_TOKEN`: token lấy từ BotFather; không ghi vào log hoặc Git.
 - `CANDIDATE_DELAY_SECONDS=2`: khoảng nghỉ tối thiểu giữa hai candidate `T/V`.
@@ -42,11 +44,18 @@ mới fallback nhập tay. Chi tiết accuracy và giới hạn đánh giá nằ
 .\.venv\Scripts\python.exe scripts\telegram_bot.py
 ```
 
-Admin đăng nhập nguồn tuần tự cho từng worker bằng `/login`, xem ảnh riêng bot gửi và trả lời `/captcha <mã>`. User mới phải gửi `/start`; admin dùng `/approve <telegram_id>` trước khi user gửi `/tracuu <biển_số>` hoặc gửi trực tiếp biển số.
+User mới gửi `/start`, sau đó admin dùng `/approve <telegram_id>`. Mỗi user ACTIVE
+dùng `/login`, gửi username rồi password nguồn trong private chat; bot gọi
+`deleteMessage` ngay và chỉ giữ credential/session trong RAM. Sau khi đăng nhập,
+user tra nhiều biển số bằng `/tracuu <biển_số>` hoặc gửi trực tiếp. `/logout` đóng
+session riêng và xóa credential khỏi RAM.
 
-Lệnh admin: `/approve`, `/revoke`, `/block`, `/users`, `/status`, `/login`, `/captcha`, `/refresh_captcha`.
+Lệnh user: `/login`, `/logout`, `/status`, `/captcha`, `/refresh_captcha`,
+`/tracuu`. Lệnh quản trị: `/approve`, `/revoke`, `/block`, `/users`.
 
-Mặc định `MAX_WORKERS=2` nhưng `SOURCE_SERIALIZE_REQUESTS=true`, phù hợp với nguồn chưa chứng minh an toàn khi gọi song song. Worker vẫn tách session/state và hàng đợi Telegram vẫn hoạt động độc lập.
+Mặc định `MAX_WORKERS=2` và `SOURCE_SERIALIZE_REQUESTS=false`. Job cùng user luôn
+dùng lock tuần tự trên session của chính họ; các user khác nhau có thể chạy song
+song bằng account/cookie/WebForms state độc lập.
 
 Đánh giá model trên manifest TSV riêng tư (`đường_dẫn_ảnh<TAB>nhãn`), tối thiểu 50 mẫu:
 
@@ -106,7 +115,7 @@ Output nằm trong `runtime/sanitized_har` và đã được Git ignore. Script 
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-Baseline kỹ thuật Phase 3 ngày 16/08/2026: `182 passed`. `compileall` và
+Baseline kỹ thuật Phase 3 ngày 16/08/2026: `185 passed`. `compileall` và
 `pip check` đều pass.
 
 Phase 3 bổ sung retry timeout/network/HTTP 5xx theo cấu hình, recovery job sau

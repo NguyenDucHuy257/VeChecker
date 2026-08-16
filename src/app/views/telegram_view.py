@@ -20,7 +20,10 @@ class TelegramView:
 
     @staticmethod
     def approved() -> str:
-        return "Tài khoản đã được phê duyệt. Có thể gửi biển số hoặc /tracuu <biển số>."
+        return (
+            "Tài khoản đã được phê duyệt. Dùng /login để đăng nhập nguồn riêng, "
+            "sau đó gửi biển số hoặc /tracuu <biển số>."
+        )
 
     @staticmethod
     def busy() -> str:
@@ -36,7 +39,7 @@ class TelegramView:
 
     @staticmethod
     def source_not_ready() -> str:
-        return "Nguồn tra cứu chưa đăng nhập. Vui lòng chờ admin xử lý."
+        return "Bạn chưa đăng nhập nguồn hoặc phiên đã hết hạn. Dùng /login."
 
     @staticmethod
     def format_results(results: Iterable[Any]) -> str:

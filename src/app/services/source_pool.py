@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from threading import Lock, RLock
 from typing import Callable
 
@@ -289,3 +289,260 @@ class SourcePool:
         self._pending_index = None
         self._pending_challenge = None
         self._captcha_attempt = 1
+
+
+@dataclass(slots=True, repr=False)
+class UserSourceSession:
+    client: WebFormsClient
+    lock: RLock = field(default_factory=RLock)
+    pending_challenge: CaptchaChallenge | None = None
+    captcha_attempt: int = 1
+
+
+class UserSourcePool:
+    """One isolated source account/session for each approved Telegram user."""
+
+    def __init__(
+        self,
+        client_factory: Callable[[str, str], WebFormsClient],
+        lookups: LookupRepository,
+        send_message: Callable[[int, str], None],
+        view: TelegramView,
+        *,
+        candidate_delay_seconds: float = 2.0,
+        serialize_requests: bool = False,
+        max_captcha_attempts: int = 3,
+        max_image_refreshes: int = 3,
+        recognizer: CaptchaRecognizer | None,
+        captcha_mode: str = "auto",
+        confidence_threshold: float = 0.6,
+    ) -> None:
+        if captcha_mode not in {"manual", "auto"}:
+            raise ValueError("captcha_mode must be manual or auto")
+        if captcha_mode == "auto" and recognizer is None:
+            raise ValueError("auto CAPTCHA mode requires a recognizer")
+        self.client_factory = client_factory
+        self.lookups = lookups
+        self.send_message = send_message
+        self.view = view
+        self.candidate_delay_seconds = candidate_delay_seconds
+        self.max_captcha_attempts = max_captcha_attempts
+        self.max_image_refreshes = max_image_refreshes
+        self.recognizer = recognizer
+        self.captcha_mode = captcha_mode
+        self.confidence_threshold = confidence_threshold
+        self._source_lock = Lock() if serialize_requests else None
+        self._sessions: dict[int, UserSourceSession] = {}
+        self._sessions_lock = RLock()
+
+    @property
+    def authenticated_users(self) -> int:
+        with self._sessions_lock:
+            return sum(session.client.authenticated for session in self._sessions.values())
+
+    def ready_for(self, telegram_user_id: int) -> bool:
+        with self._sessions_lock:
+            session = self._sessions.get(telegram_user_id)
+            return bool(session and session.client.authenticated)
+
+    def close(self) -> None:
+        with self._sessions_lock:
+            sessions = list(self._sessions.values())
+            self._sessions.clear()
+        for session in sessions:
+            with session.lock:
+                session.client.close()
+
+    def login(
+        self, telegram_user_id: int, username: str, password: str
+    ) -> SourceLoginResponse:
+        username = username.strip()
+        if not username or not password:
+            raise ValueError("Tài khoản và mật khẩu nguồn không được để trống.")
+        self.logout(telegram_user_id)
+        session = UserSourceSession(self.client_factory(username, password))
+        with self._sessions_lock:
+            self._sessions[telegram_user_id] = session
+        try:
+            with session.lock, self._source_guard():
+                challenge = session.client.start_login()
+                session.pending_challenge = challenge
+                prompt = self._download_prompt(session, challenge)
+                return self._try_auto(telegram_user_id, session, prompt)
+        except Exception:
+            self._discard_session(telegram_user_id, session)
+            raise
+
+    def logout(self, telegram_user_id: int) -> bool:
+        with self._sessions_lock:
+            session = self._sessions.pop(telegram_user_id, None)
+        if session is None:
+            return False
+        with session.lock:
+            session.client.close()
+        return True
+
+    def submit_captcha(
+        self, telegram_user_id: int, value: str
+    ) -> SourceLoginResponse:
+        session = self._require_session(telegram_user_id)
+        with session.lock, self._source_guard():
+            if session.pending_challenge is None:
+                raise SourceNotReadyError("Không có CAPTCHA chờ nhập. Dùng /login trước.")
+            captcha = value.strip()
+            if not captcha:
+                return SourceLoginResponse("Mã CAPTCHA không được để trống.", None, False)
+            try:
+                session.client.submit_login(captcha)
+            except CaptchaInvalidError:
+                if session.captcha_attempt >= self.max_captcha_attempts:
+                    self._discard_session(telegram_user_id, session)
+                    return SourceLoginResponse(
+                        "Đã nhập sai CAPTCHA quá số lần cho phép. Dùng /login để thử lại.",
+                        None,
+                        False,
+                    )
+                session.captcha_attempt += 1
+                challenge = session.client.refresh_captcha()
+                session.pending_challenge = challenge
+                prompt = self._download_prompt(session, challenge)
+                return SourceLoginResponse("CAPTCHA chưa đúng, đã tạo ảnh mới.", prompt, False)
+            session.pending_challenge = None
+            return SourceLoginResponse("Đăng nhập nguồn thành công.", None, True)
+
+    def refresh_captcha(self, telegram_user_id: int) -> SourceLoginResponse:
+        session = self._require_session(telegram_user_id)
+        with session.lock, self._source_guard():
+            if session.pending_challenge is None:
+                raise SourceNotReadyError("Không có CAPTCHA chờ nhập. Dùng /login trước.")
+            challenge = session.client.refresh_captcha()
+            session.pending_challenge = challenge
+            prompt = self._download_prompt(session, challenge)
+            return SourceLoginResponse("Đã làm mới CAPTCHA.", prompt, False)
+
+    def handler_factory(self, _worker_index: int) -> JobHandler:
+        def handle(job: LookupJob) -> None:
+            session = self._require_ready_session(job.telegram_user_id)
+            with session.lock:
+                if not session.client.authenticated:
+                    self.send_message(job.chat_id, self.view.source_not_ready())
+                    raise SourceNotReadyError("Source user session is not authenticated")
+                controller = LookupController(
+                    session.client,
+                    self.lookups,
+                    user_id=job.database_user_id,
+                    candidate_delay_seconds=self.candidate_delay_seconds,
+                )
+                guard = self._source_guard()
+                try:
+                    with guard:
+                        result = controller.lookup(job.input_plate)
+                except SessionExpiredError:
+                    session.client.authenticated = False
+                    self.send_message(job.chat_id, self.view.source_not_ready())
+                    raise
+                except VrServiceError:
+                    self.send_message(
+                        job.chat_id,
+                        "Tra cứu thất bại do nguồn tạm thời không ổn định.",
+                    )
+                    raise
+
+            if result.successes:
+                self.send_message(job.chat_id, self.view.format_results(result.successes))
+            elif result.status is LookupStatus.INVALID:
+                self.send_message(job.chat_id, self.view.invalid_plate())
+            else:
+                self.send_message(job.chat_id, "Không tìm thấy dữ liệu phương tiện.")
+
+        return handle
+
+    def _try_auto(
+        self,
+        telegram_user_id: int,
+        session: UserSourceSession,
+        prompt: SourceLoginPrompt,
+    ) -> SourceLoginResponse:
+        if self.captcha_mode != "auto":
+            return SourceLoginResponse(
+                "Nhập CAPTCHA để đăng nhập tài khoản nguồn.", prompt, False
+            )
+        assert self.recognizer is not None
+        while True:
+            try:
+                prediction = self.recognizer.predict(prompt.image)
+            except CaptchaModelError:
+                session.captcha_attempt = 1
+                manual_prompt = SourceLoginPrompt(
+                    1, prompt.image, 1, self.max_captcha_attempts
+                )
+                return SourceLoginResponse(
+                    "Không thể chạy model CAPTCHA; vui lòng nhập tay.",
+                    manual_prompt,
+                    False,
+                )
+            if prediction.confidence < self.confidence_threshold:
+                session.captcha_attempt += 1
+                challenge = session.client.refresh_captcha()
+                session.pending_challenge = challenge
+                prompt = self._download_prompt(session, challenge)
+                continue
+            try:
+                session.client.submit_login(prediction.text)
+            except CaptchaInvalidError:
+                session.captcha_attempt += 1
+                challenge = session.client.current_captcha_challenge()
+                session.pending_challenge = challenge
+                prompt = self._download_prompt(session, challenge)
+                continue
+            session.pending_challenge = None
+            return SourceLoginResponse("Đăng nhập nguồn thành công.", None, True)
+
+    def _download_prompt(
+        self, session: UserSourceSession, challenge: CaptchaChallenge
+    ) -> SourceLoginPrompt:
+        current = challenge
+        for refresh_count in range(self.max_image_refreshes + 1):
+            try:
+                image = session.client.download_captcha(current)
+                session.pending_challenge = current
+                return SourceLoginPrompt(
+                    1,
+                    image,
+                    session.captcha_attempt,
+                    max(self.max_captcha_attempts, session.captcha_attempt),
+                )
+            except CaptchaImageUnavailableError as exc:
+                if refresh_count >= self.max_image_refreshes:
+                    raise CaptchaImageUnavailableError(
+                        "Website nguồn không tạo được ảnh CAPTCHA sau "
+                        f"{self.max_image_refreshes} lần làm mới.",
+                        status_code=exc.status_code,
+                    ) from exc
+                current = session.client.refresh_captcha()
+        raise AssertionError("captcha image loop ended unexpectedly")
+
+    def _require_session(self, telegram_user_id: int) -> UserSourceSession:
+        with self._sessions_lock:
+            session = self._sessions.get(telegram_user_id)
+        if session is None:
+            raise SourceNotReadyError("Chưa có phiên nguồn. Dùng /login trước.")
+        return session
+
+    def _require_ready_session(self, telegram_user_id: int) -> UserSourceSession:
+        session = self._require_session(telegram_user_id)
+        if not session.client.authenticated:
+            raise SourceNotReadyError("Source user session is not authenticated")
+        return session
+
+    def _discard_session(
+        self, telegram_user_id: int, expected: UserSourceSession
+    ) -> None:
+        with self._sessions_lock:
+            current = self._sessions.get(telegram_user_id)
+            if current is expected:
+                self._sessions.pop(telegram_user_id, None)
+        expected.client.close()
+
+    def _source_guard(self):
+        return self._source_lock if self._source_lock is not None else nullcontext()

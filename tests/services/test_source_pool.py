@@ -6,7 +6,7 @@ from app.database import Database
 from app.models import LookupRepository
 from app.services.errors import AuthenticationError, CaptchaInvalidError, SessionExpiredError
 from app.services.captcha_onnx import CaptchaModelError, CaptchaPrediction
-from app.services.source_pool import SourcePool
+from app.services.source_pool import SourcePool, UserSourcePool
 from app.services.vr_parser import VehicleResult
 from app.services.webforms_client import CaptchaChallenge
 from app.services.worker_service import LookupJob
@@ -299,3 +299,73 @@ def test_auto_does_not_retry_authentication_failure(tmp_path) -> None:
 
     assert len(recognizer.images) == 1
     assert client.refresh_count == 0
+
+
+def test_per_user_pool_isolates_accounts_sessions_and_logout(tmp_path) -> None:
+    database = Database(tmp_path / "per-user.sqlite3")
+    database.initialize([1001, 1002])
+    created = []
+
+    def client_factory(username, password):
+        client = FakeSourceClient()
+        client.source_username = username
+        client.source_password = password
+        created.append(client)
+        return client
+
+    recognizer = FakeRecognizer(
+        [CaptchaPrediction("GOOD", 0.99), CaptchaPrediction("GOOD", 0.99)]
+    )
+    messages = []
+    pool = UserSourcePool(
+        client_factory,
+        LookupRepository(database),
+        lambda chat_id, text: messages.append((chat_id, text)),
+        TelegramView(),
+        candidate_delay_seconds=0,
+        recognizer=recognizer,
+    )
+
+    assert pool.login(1001, "account-one", "password-one").ready is True
+    assert pool.login(1002, "account-two", "password-two").ready is True
+    pool.handler_factory(0)(LookupJob(1, 1001, 1, 5001, "00A00000T"))
+    pool.handler_factory(1)(LookupJob(2, 1002, 2, 5002, "00A00000V"))
+
+    assert len(created) == 2
+    assert created[0] is not created[1]
+    assert created[0].source_username == "account-one"
+    assert created[1].source_username == "account-two"
+    assert created[0].lookup_plates == ["00A00000T"]
+    assert created[1].lookup_plates == ["00A00000V"]
+    assert pool.authenticated_users == 2
+    assert pool.logout(1001) is True
+    assert created[0].closed is True
+    assert pool.ready_for(1001) is False
+    assert pool.ready_for(1002) is True
+
+
+def test_per_user_session_expiry_does_not_logout_other_user(tmp_path) -> None:
+    database = Database(tmp_path / "per-user-expiry.sqlite3")
+    database.initialize([1001, 1002])
+    clients = [
+        FakeSourceClient(lookup_outcome=SessionExpiredError()),
+        FakeSourceClient(),
+    ]
+    pool = UserSourcePool(
+        lambda _username, _password: clients.pop(0),
+        LookupRepository(database),
+        lambda *_: None,
+        TelegramView(),
+        candidate_delay_seconds=0,
+        recognizer=FakeRecognizer(
+            [CaptchaPrediction("GOOD", 0.99), CaptchaPrediction("GOOD", 0.99)]
+        ),
+    )
+    pool.login(1001, "one", "one-pass")
+    pool.login(1002, "two", "two-pass")
+
+    with pytest.raises(SessionExpiredError):
+        pool.handler_factory(0)(LookupJob(1, 1001, 1, 5001, "00A00000T"))
+
+    assert pool.ready_for(1001) is False
+    assert pool.ready_for(1002) is True
