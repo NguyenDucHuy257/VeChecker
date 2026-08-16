@@ -100,21 +100,21 @@ class LookupController:
             )
         number = match.group("number")
         suffix = match.group("suffix")
+        source_base = (
+            f"{match.group('province')}{match.group('series').lower()}{number}"
+        )
         if len(number) == 4:
+            if suffix == "X":
+                raise InvalidPlateError("Biển 4 số chỉ hỗ trợ biến thể T/V.")
             if suffix is not None:
-                raise InvalidPlateError("Biển 4 số không dùng mã màu T/X/V.")
-            return (
-                f"{match.group('province')}{match.group('series').lower()}{number}",
-            )
+                return (f"{source_base}{suffix}",)
+            return (source_base, f"{source_base}T", f"{source_base}V")
+        if match.group("series") == "RM":
+            if suffix is not None:
+                return (f"{source_base}{suffix}",)
+            return (source_base, f"{source_base}T", f"{source_base}V")
         if suffix is not None:
             return (normalized,)
-        if match.group("series") == "RM":
-            # The authenticated ptpublicweb endpoint expects RM trailer plates
-            # without a colour suffix and with the series in lowercase (as
-            # observed from its own form payload: txtBienDK=37rm00628).
-            return (
-                f"{match.group('province')}rm{match.group('number')}",
-            )
         if match.group("series") in {"KT", "LD"}:
             return (normalized,)
         return (
@@ -128,7 +128,10 @@ class LookupController:
         match = _PLATE_PATTERN.fullmatch(value)
         if match is None:
             return False
-        return len(match.group("number")) == 5 or match.group("suffix") is None
+        return (
+            len(match.group("number")) == 5
+            or match.group("suffix") in {None, "T", "V"}
+        )
 
     def lookup(self, input_plate: str) -> LookupRunResult:
         normalized = self.normalize_plate(input_plate)

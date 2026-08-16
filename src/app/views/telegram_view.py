@@ -29,7 +29,7 @@ Cách dùng:
 3. Yêu cầu được xếp hàng và xử lý lần lượt, không chạy đồng thời.
 4. Khi session nguồn hết hạn, bot tự đăng nhập lại rồi tiếp tục job.
 
-Biển số hợp lệ: 2 số + 1-2 chữ + 4-5 số. Ví dụ: 37s3456, 30A12345, 37rm00562. Bot tự bỏ dấu phân cách và chuẩn hóa. Biển 4 số được gửi lowercase không có mã màu; biển 5 số thường thử T/X/V; series RM gửi lowercase không có mã màu, KT/LD gửi nguyên bản."""
+Biển số hợp lệ: 2 số + 1-2 chữ + 4-5 số. Ví dụ: 37s3456, 30A12345, 37rm00562. Bot tự bỏ dấu phân cách và chuẩn hóa. Biển 4 số và series RM thử lần lượt nguyên bản/T/V; biển 5 số thường thử T/X/V; KT/LD gửi nguyên bản."""
 
     @staticmethod
     def admin_help() -> str:

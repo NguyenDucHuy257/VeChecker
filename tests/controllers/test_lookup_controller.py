@@ -47,20 +47,34 @@ def test_candidate_generation() -> None:
     assert LookupController.create_candidates("00a00000V") == ("00A00000V",)
     assert LookupController.create_candidates("37rm00562") == (
         "37rm00562",
+        "37rm00562T",
+        "37rm00562V",
     )
-    assert LookupController.create_candidates("37rm00562t") == ("37RM00562T",)
-    assert LookupController.create_candidates("37rm00562x") == ("37RM00562X",)
+    assert LookupController.create_candidates("37rm00562t") == ("37rm00562T",)
+    assert LookupController.create_candidates("37rm00562x") == ("37rm00562X",)
     assert LookupController.create_candidates("37-Rm 005.62") == (
         "37rm00562",
+        "37rm00562T",
+        "37rm00562V",
     )
     assert LookupController.create_candidates("37r\u200bm00562") == (
         "37rm00562",
+        "37rm00562T",
+        "37rm00562V",
     )
     assert LookupController.create_candidates("29ld01234") == ("29LD01234",)
     assert LookupController.create_candidates("29kt01234") == ("29KT01234",)
-    assert LookupController.create_candidates("37s3456") == ("37s3456",)
-    assert LookupController.create_candidates("37S3456") == ("37s3456",)
-    assert LookupController.create_candidates("37-S 34.56") == ("37s3456",)
+    assert LookupController.create_candidates("37s3456") == (
+        "37s3456",
+        "37s3456T",
+        "37s3456V",
+    )
+    assert LookupController.create_candidates("37S3456T") == ("37s3456T",)
+    assert LookupController.create_candidates("37-S 34.56") == (
+        "37s3456",
+        "37s3456T",
+        "37s3456V",
+    )
     with pytest.raises(InvalidPlateError):
         LookupController.create_candidates("   ")
 
@@ -72,7 +86,7 @@ def test_candidate_generation() -> None:
         "37A1234567",
         "37ABC12345",
         "37R@M00562",
-        "37S3456T",
+        "37S3456X",
         "ABC",
     ],
 )
@@ -112,25 +126,25 @@ def test_suffixed_plate_runs_once(tmp_path) -> None:
 
 
 def test_rm_plate_uses_lowercase_series_without_color_suffix(tmp_path) -> None:
-    fake = FakeClient([VEHICLE_T])
+    fake = FakeClient([VEHICLE_T, VehicleNotFoundError(), VehicleNotFoundError()])
     lookup, repository = controller(tmp_path, fake)
 
     result = lookup.lookup("37rm00562")
 
-    assert fake.plates == ["37rm00562"]
+    assert fake.plates == ["37rm00562", "37rm00562T", "37rm00562V"]
     assert len(result.successes) == 1
-    assert len(repository.list_all()) == 1
+    assert len(repository.list_all()) == 3
 
 
 def test_four_digit_plate_uses_lowercase_series_without_color_suffix(tmp_path) -> None:
-    fake = FakeClient([VEHICLE_T])
+    fake = FakeClient([VEHICLE_T, VehicleNotFoundError(), VehicleNotFoundError()])
     lookup, repository = controller(tmp_path, fake)
 
     result = lookup.lookup("37S3456")
 
-    assert fake.plates == ["37s3456"]
+    assert fake.plates == ["37s3456", "37s3456T", "37s3456V"]
     assert len(result.successes) == 1
-    assert len(repository.list_all()) == 1
+    assert len(repository.list_all()) == 3
 
 
 def test_both_candidates_can_return_data(tmp_path) -> None:
