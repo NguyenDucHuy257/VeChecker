@@ -81,11 +81,12 @@ Bot không phân biệt chữ hoa/thường và tự loại khoảng trắng, d�
 chấm cùng ký tự định dạng ẩn. Vì vậy `37rm00562`, `37-RM 005.62` và
 `37RM00562` được chuẩn hóa thành cùng một giá trị.
 
-Với biển 5 số chưa có mã màu, bot thử lần lượt `T` (trắng), `X` (xanh), `V`
-(vàng). Series đặc biệt `KT` và `LD` được gửi nguyên bản theo hướng dẫn của Cục
-Đăng kiểm. Input sai định dạng bị từ chối tại ứng dụng và không gửi lên website
-nguồn. Kết quả gồm biển đã tra, loại phương tiện, thương hiệu/nhãn hiệu và thời
-hạn kiểm định.
+Với biển 5 số chưa có mã màu, bot thường thử lần lượt `T` (trắng), `X` (xanh),
+`V` (vàng). Riêng series `RM`, endpoint `ptpublicweb` yêu cầu payload lowercase
+không có mã màu, ví dụ `txtBienDK=37rm00628`; bot tự chuyển sang dạng này. Series
+`KT` và `LD` được gửi nguyên bản. Input sai định dạng bị từ chối tại ứng dụng và
+không gửi lên website nguồn. Kết quả gồm biển đã tra, loại phương tiện, thương
+hiệu/nhãn hiệu và thời hạn kiểm định.
 
 ## Yêu cầu
 

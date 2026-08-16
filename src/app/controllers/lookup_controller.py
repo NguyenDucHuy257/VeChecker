@@ -100,6 +100,13 @@ class LookupController:
             )
         if match.group("suffix") is not None:
             return (normalized,)
+        if match.group("series") == "RM":
+            # The authenticated ptpublicweb endpoint expects RM trailer plates
+            # without a colour suffix and with the series in lowercase (as
+            # observed from its own form payload: txtBienDK=37rm00628).
+            return (
+                f"{match.group('province')}rm{match.group('number')}",
+            )
         if match.group("series") in {"KT", "LD"}:
             return (normalized,)
         return (

@@ -29,7 +29,7 @@ Cách dùng:
 3. Yêu cầu được xếp hàng và xử lý lần lượt, không chạy đồng thời.
 4. Khi session nguồn hết hạn, bot tự đăng nhập lại rồi tiếp tục job.
 
-Biển số hợp lệ: 2 số + 1-2 chữ + 5 số, có thể kèm mã màu T/X/V. Ví dụ: 30A12345, 37rm00562, 37-RM 005.62. Bot tự bỏ dấu phân cách và đổi chữ hoa. Biển 5 số chưa có mã màu sẽ thử T/X/V; series KT/LD được tra nguyên bản."""
+Biển số hợp lệ: 2 số + 1-2 chữ + 5 số, có thể kèm mã màu T/X/V. Ví dụ: 30A12345, 37rm00562, 37-RM 005.62. Bot tự bỏ dấu phân cách và chuẩn hóa. Biển 5 số thường sẽ thử T/X/V; series RM được gửi dạng lowercase không có mã màu, KT/LD được gửi nguyên bản."""
 
     @staticmethod
     def admin_help() -> str:
