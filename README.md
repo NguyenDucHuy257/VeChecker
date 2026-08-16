@@ -66,12 +66,14 @@ nhất một lần để xuất hiện trong `/users`.
 
 ## Định dạng biển số
 
-Input có dạng `2 số + 1 chữ + 5 số`, có thể kèm đuôi `T` hoặc `V`:
+Input có dạng `2 số + 1–2 chữ + 5 số`, có thể kèm đuôi `T` hoặc `V`:
 
 ```text
 30A12345
 30A12345T
 30A12345V
+37RM00562
+37RM00562T
 ```
 
 Nếu không có đuôi, bot thử lần lượt candidate `T` và `V`. Input sai định dạng bị
@@ -298,7 +300,7 @@ cd /opt/VeChecker
 .venv/bin/python -m pip check
 ```
 
-Baseline hiện tại: `194 passed`.
+Baseline hiện tại: `196 passed`.
 
 Đánh giá model CAPTCHA bằng manifest TSV riêng tư:
 

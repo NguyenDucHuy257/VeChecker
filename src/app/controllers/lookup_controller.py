@@ -18,7 +18,7 @@ from app.services.vr_parser import VehicleResult
 from app.services.webforms_client import WebFormsClient
 
 
-_PLATE_PATTERN = re.compile(r"^[0-9]{2}[A-Z][0-9]{5}(?:[TV])?$")
+_PLATE_PATTERN = re.compile(r"^[0-9]{2}[A-Z]{1,2}[0-9]{5}(?:[TV])?$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,7 +82,7 @@ class LookupController:
         normalized = cls.normalize_plate(value)
         if not cls.is_valid_plate(normalized):
             raise InvalidPlateError(
-                "Biển số phải có dạng 2 số, 1 chữ, 5 số và có thể kèm đuôi T/V."
+                "Biển số phải có dạng 2 số, 1-2 chữ, 5 số và có thể kèm đuôi T/V."
             )
         if normalized.endswith(("T", "V")):
             return (normalized,)

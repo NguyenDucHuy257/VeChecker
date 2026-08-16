@@ -138,6 +138,17 @@ def test_traacuu_alias_is_enqueued_for_active_user(tmp_path) -> None:
     assert workers.jobs[0].input_plate == "00A00000T"
 
 
+def test_two_letter_plate_is_normalized_and_enqueued(tmp_path) -> None:
+    controller, users, workers, _, _ = make_controller(tmp_path)
+    users.get_or_create_pending(2)
+    users.update_status(2, UserStatus.ACTIVE)
+
+    controller.handle_update(telegram_update(1, 2, "/tracuu 37rm00562"))
+
+    assert len(workers.jobs) == 1
+    assert workers.jobs[0].input_plate == "37RM00562"
+
+
 def test_revoke_and_block_take_effect_immediately(tmp_path) -> None:
     controller, users, workers, source, _ = make_controller(tmp_path)
     users.get_or_create_pending(2)
