@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
+import unicodedata
 from time import perf_counter, sleep
 from collections.abc import Callable
 
@@ -75,7 +76,16 @@ class LookupController:
 
     @staticmethod
     def normalize_plate(value: str) -> str:
-        normalized = value.strip().upper()
+        normalized = unicodedata.normalize("NFKC", value).upper()
+        normalized = "".join(
+            character
+            for character in normalized
+            if not (
+                character.isspace()
+                or character in {"-", "."}
+                or unicodedata.category(character) == "Cf"
+            )
+        )
         if not normalized:
             raise InvalidPlateError("Biển số không được để trống.")
         return normalized

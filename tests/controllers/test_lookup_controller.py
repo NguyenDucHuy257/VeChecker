@@ -52,6 +52,16 @@ def test_candidate_generation() -> None:
     )
     assert LookupController.create_candidates("37rm00562t") == ("37RM00562T",)
     assert LookupController.create_candidates("37rm00562x") == ("37RM00562X",)
+    assert LookupController.create_candidates("37-Rm 005.62") == (
+        "37RM00562T",
+        "37RM00562X",
+        "37RM00562V",
+    )
+    assert LookupController.create_candidates("37r\u200bm00562") == (
+        "37RM00562T",
+        "37RM00562X",
+        "37RM00562V",
+    )
     assert LookupController.create_candidates("29ld01234") == ("29LD01234",)
     assert LookupController.create_candidates("29kt01234") == ("29KT01234",)
     with pytest.raises(InvalidPlateError):
@@ -63,8 +73,8 @@ def test_candidate_generation() -> None:
     [
         "37ABCD12",
         "37A1234567",
-        "37A12-345",
         "37ABC12345",
+        "37R@M00562",
         "ABC",
     ],
 )

@@ -9,7 +9,7 @@ from typing import Any, Protocol
 
 from app.controllers.lookup_controller import LookupController
 from app.models import UserRepository, UserRole, UserStatus
-from app.services.errors import SourceNotReadyError, VrServiceError
+from app.services.errors import InvalidPlateError, SourceNotReadyError, VrServiceError
 from app.services.source_pool import SourceLoginResponse, SourcePool
 from app.services.worker_service import EnqueueResult, LookupJob, WorkerService
 from app.views.telegram_view import TelegramView
@@ -214,7 +214,11 @@ class TelegramController:
             return
 
         plate = argument if command in {"/tracuu", "/traacuu"} else value if not command else ""
-        normalized = plate.strip().upper()
+        try:
+            normalized = LookupController.normalize_plate(plate)
+        except InvalidPlateError:
+            self.bot.send_message(chat_id, self.view.invalid_plate())
+            return
         if not normalized or not LookupController.is_valid_plate(normalized):
             self.bot.send_message(chat_id, self.view.invalid_plate())
             return

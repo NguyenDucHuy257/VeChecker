@@ -46,7 +46,7 @@ def test_admin_and_user_help_explain_distinct_permissions() -> None:
     assert "/logout" not in user
     assert "/approve" not in user
     assert "xử lý lần lượt" in user
-    assert "37RM00562" in user
+    assert "37rm00562" in user
     assert "/login" in admin
     assert "/logout" in admin
     assert "tự đăng nhập lại" in admin
