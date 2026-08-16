@@ -18,7 +18,10 @@ from app.services.vr_parser import VehicleResult
 from app.services.webforms_client import WebFormsClient
 
 
-_PLATE_PATTERN = re.compile(r"^[0-9]{2}[A-Z]{1,2}[0-9]{5}(?:[TV])?$")
+_PLATE_PATTERN = re.compile(
+    r"^(?P<province>[0-9]{2})(?P<series>[A-Z]{1,2})"
+    r"(?P<number>[0-9]{5})(?P<suffix>[TV])?$"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,11 +83,14 @@ class LookupController:
     @classmethod
     def create_candidates(cls, value: str) -> tuple[str, ...]:
         normalized = cls.normalize_plate(value)
-        if not cls.is_valid_plate(normalized):
+        match = _PLATE_PATTERN.fullmatch(normalized)
+        if match is None:
             raise InvalidPlateError(
                 "Biển số phải có dạng 2 số, 1-2 chữ, 5 số và có thể kèm đuôi T/V."
             )
-        if normalized.endswith(("T", "V")):
+        if match.group("suffix") is not None:
+            return (normalized,)
+        if len(match.group("series")) == 2:
             return (normalized,)
         return (f"{normalized}T", f"{normalized}V")
 

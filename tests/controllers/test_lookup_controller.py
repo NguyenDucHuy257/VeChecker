@@ -44,10 +44,7 @@ def test_candidate_generation() -> None:
     )
     assert LookupController.create_candidates("00a00000t") == ("00A00000T",)
     assert LookupController.create_candidates("00a00000V") == ("00A00000V",)
-    assert LookupController.create_candidates("37rm00562") == (
-        "37RM00562T",
-        "37RM00562V",
-    )
+    assert LookupController.create_candidates("37rm00562") == ("37RM00562",)
     assert LookupController.create_candidates("37rm00562t") == ("37RM00562T",)
     with pytest.raises(InvalidPlateError):
         LookupController.create_candidates("   ")
@@ -89,6 +86,17 @@ def test_suffixed_plate_runs_once(tmp_path) -> None:
     result = lookup.lookup("00a00000v")
 
     assert fake.plates == ["00A00000V"]
+    assert len(result.successes) == 1
+    assert len(repository.list_all()) == 1
+
+
+def test_two_letter_plate_runs_once_without_adding_suffix(tmp_path) -> None:
+    fake = FakeClient([VEHICLE_T])
+    lookup, repository = controller(tmp_path, fake)
+
+    result = lookup.lookup("37rm00562")
+
+    assert fake.plates == ["37RM00562"]
     assert len(result.successes) == 1
     assert len(repository.list_all()) == 1
 

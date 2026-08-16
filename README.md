@@ -76,9 +76,10 @@ Input có dạng `2 số + 1–2 chữ + 5 số`, có thể kèm đuôi `T` ho�
 37RM00562T
 ```
 
-Nếu không có đuôi, bot thử lần lượt candidate `T` và `V`. Input sai định dạng bị
-từ chối tại ứng dụng và không gửi lên website nguồn. Kết quả gồm biển đã tra,
-loại phương tiện, thương hiệu/nhãn hiệu và thời hạn kiểm định.
+Với series một chữ và không có đuôi, bot thử lần lượt candidate `T` và `V`. Với
+series hai chữ như `RM`, bot gửi nguyên biển số, không tự nối `T/V`. Input sai
+định dạng bị từ chối tại ứng dụng và không gửi lên website nguồn. Kết quả gồm
+biển đã tra, loại phương tiện, thương hiệu/nhãn hiệu và thời hạn kiểm định.
 
 ## Yêu cầu
 
@@ -300,7 +301,7 @@ cd /opt/VeChecker
 .venv/bin/python -m pip check
 ```
 
-Baseline hiện tại: `196 passed`.
+Baseline hiện tại: `197 passed`.
 
 Đánh giá model CAPTCHA bằng manifest TSV riêng tư:
 
