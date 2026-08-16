@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from app.controllers.lookup_controller import LookupController
 from app.controllers.telegram_controller import TelegramController, UserRateLimiter
 from app.database import Database
 from app.models import UserRepository, UserStatus
@@ -147,6 +148,26 @@ def test_two_letter_plate_is_normalized_and_enqueued(tmp_path) -> None:
 
     assert len(workers.jobs) == 1
     assert workers.jobs[0].input_plate == "37RM00562"
+
+
+def test_rm_regression_flows_from_telegram_to_lowercase_source_candidates(
+    tmp_path,
+) -> None:
+    controller, users, workers, _, bot = make_controller(tmp_path)
+    users.get_or_create_pending(2)
+    users.update_status(2, UserStatus.ACTIVE)
+
+    controller.handle_update(telegram_update(1, 2, "/tracuu 37rm00628"))
+
+    assert bot.messages[-1][1] == TelegramView.queued()
+    assert len(workers.jobs) == 1
+    queued_plate = workers.jobs[0].input_plate
+    assert queued_plate == "37RM00628"
+    assert LookupController.create_candidates(queued_plate) == (
+        "37rm00628",
+        "37rm00628t",
+        "37rm00628v",
+    )
 
 
 def test_lowercase_plate_with_hidden_format_character_is_enqueued(tmp_path) -> None:

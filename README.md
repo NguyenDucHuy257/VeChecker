@@ -317,7 +317,7 @@ cd /opt/VeChecker
 .venv/bin/python -m pip check
 ```
 
-Baseline hiện tại: `202 passed`.
+Baseline hiện tại: `203 passed`.
 
 Đánh giá model CAPTCHA bằng manifest TSV riêng tư:
 
