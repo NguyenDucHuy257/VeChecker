@@ -26,6 +26,11 @@ nhập lại account riêng và `/status` để kiểm tra `source_ready=True`.
 - HTTP 4xx, lỗi parse, input nghiệp vụ và credential không retry.
 - CAPTCHA auto chỉ inference một lần trên mỗi challenge; ảnh confidence thấp
   hoặc bị website từ chối được thay bằng challenge mới cho đến khi login.
+- Với Telegram ở chế độ CAPTCHA `auto`, khi lookup phát hiện session riêng hết
+  hạn, bot dùng credential còn trong RAM để đăng nhập lại rồi retry đúng candidate
+  đó một lần. Nếu session tiếp tục hết hạn, job dừng để tránh vòng lặp vô hạn.
+- `/logout`, revoke, block hoặc restart xóa credential khỏi RAM; trường hợp này
+  user phải dùng `/login` lại.
 
 ## Backup SQLite
 
@@ -61,7 +66,7 @@ startup recovery được chạy lại.
 | `SOURCE_TIMEOUT` | Nguồn quá thời gian sau retry | Thử job mới sau |
 | `SOURCE_NETWORK_ERROR` | Mất kết nối sau retry | Kiểm tra mạng |
 | `SOURCE_HTTP_ERROR` | HTTP nguồn không hợp lệ | Kiểm tra status/log code |
-| `SESSION_EXPIRED` | Session riêng của user hết hạn | User chạy `/login` |
+| `SESSION_EXPIRED` | Session vẫn hết hạn sau một lần tự đăng nhập lại | Kiểm tra nguồn; user chạy `/login` nếu lỗi lặp lại |
 | `AUTH_FAILED` | Credential riêng bị từ chối | User kiểm tra account nguồn |
 | `SOURCE_NOT_READY` | User chưa login | User chạy `/login` |
 | `SOURCE_ERROR` | Lỗi bất ngờ hoặc job bị ngắt do restart | Kiểm tra log, gửi job mới |

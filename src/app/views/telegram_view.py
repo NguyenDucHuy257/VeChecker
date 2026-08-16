@@ -32,7 +32,8 @@ Cách dùng:
 2. Gửi username nguồn khi bot yêu cầu.
 3. Gửi password khi bot yêu cầu.
 4. Hai tin nhắn credential sẽ được bot xóa ngay và không lưu DB/log.
-5. Khi đăng nhập thành công, tra cứu nhiều lần đến khi /logout, session hết hạn hoặc server restart.
+5. Khi session nguồn hết hạn, bot tự giải CAPTCHA, đăng nhập lại bằng account trước đó và tiếp tục tra cứu.
+6. Credential chỉ giữ trong RAM; /logout hoặc server restart sẽ yêu cầu /login lại.
 
 Biển số hợp lệ: 2 số + 1 chữ + 5 số, có thể kèm T/V. Không có đuôi sẽ thử cả T và V."""
 
@@ -59,7 +60,7 @@ Lệnh sử dụng cá nhân:
 /captcha <mã> và /refresh_captcha — fallback CAPTCHA nhập tay
 /help — mở hướng dẫn này
 
-Credential được xóa khỏi chat ngay, chỉ giữ trong RAM và mất khi logout/revoke/block/restart."""
+Nếu session nguồn hết hạn, bot tự đăng nhập lại và tiếp tục tra cứu. Credential được xóa khỏi chat ngay, chỉ giữ trong RAM và mất khi logout/revoke/block/restart."""
 
     @staticmethod
     def pending_help() -> str:

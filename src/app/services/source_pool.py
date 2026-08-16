@@ -10,6 +10,7 @@ from typing import Callable
 from app.controllers.lookup_controller import LookupController
 from app.models import LookupRepository, LookupStatus
 from app.services.errors import (
+    AuthenticationError,
     CaptchaImageUnavailableError,
     CaptchaInvalidError,
     SessionExpiredError,
@@ -299,6 +300,28 @@ class UserSourceSession:
     captcha_attempt: int = 1
 
 
+class _ReauthenticatingClient:
+    """Retry one candidate after transparently rebuilding an expired session."""
+
+    def __init__(
+        self,
+        client: WebFormsClient,
+        reauthenticate: Callable[[], None],
+    ) -> None:
+        self._client = client
+        self._reauthenticate = reauthenticate
+
+    def lookup_candidate(self, plate: str):
+        try:
+            return self._client.lookup_candidate(plate)
+        except SessionExpiredError:
+            self._client.authenticated = False
+            self._reauthenticate()
+            # Retry exactly once. A second expiry is surfaced to the worker so a
+            # broken source cannot keep one Telegram job alive indefinitely.
+            return self._client.lookup_candidate(plate)
+
+
 class UserSourcePool:
     """One isolated source account/session for each approved Telegram user."""
 
@@ -422,22 +445,27 @@ class UserSourcePool:
 
     def handler_factory(self, _worker_index: int) -> JobHandler:
         def handle(job: LookupJob) -> None:
-            session = self._require_ready_session(job.telegram_user_id)
-            with session.lock:
-                if not session.client.authenticated:
-                    self.send_message(job.chat_id, self.view.source_not_ready())
-                    raise SourceNotReadyError("Source user session is not authenticated")
-                controller = LookupController(
-                    session.client,
-                    self.lookups,
-                    user_id=job.database_user_id,
-                    candidate_delay_seconds=self.candidate_delay_seconds,
-                )
-                guard = self._source_guard()
+            session = self._require_session(job.telegram_user_id)
+            with session.lock, self._source_guard():
                 try:
-                    with guard:
-                        result = controller.lookup(job.input_plate)
+                    if not session.client.authenticated:
+                        self._reauthenticate(session)
+                    lookup_client = _ReauthenticatingClient(
+                        session.client,
+                        lambda: self._reauthenticate(session),
+                    )
+                    controller = LookupController(
+                        lookup_client,
+                        self.lookups,
+                        user_id=job.database_user_id,
+                        candidate_delay_seconds=self.candidate_delay_seconds,
+                    )
+                    result = controller.lookup(job.input_plate)
                 except SessionExpiredError:
+                    session.client.authenticated = False
+                    self.send_message(job.chat_id, self.view.source_not_ready())
+                    raise
+                except (AuthenticationError, SourceNotReadyError):
                     session.client.authenticated = False
                     self.send_message(job.chat_id, self.view.source_not_ready())
                     raise
@@ -456,6 +484,23 @@ class UserSourcePool:
                 self.send_message(job.chat_id, "Không tìm thấy dữ liệu phương tiện.")
 
         return handle
+
+    def _reauthenticate(self, session: UserSourceSession) -> None:
+        """Rebuild an expired cookie session using credentials retained in RAM."""
+
+        if self.captcha_mode != "auto":
+            raise SourceNotReadyError(
+                "Phiên nguồn đã hết hạn; chế độ CAPTCHA thủ công cần /login lại."
+            )
+        session.captcha_attempt = 1
+        challenge = session.client.start_login()
+        session.pending_challenge = challenge
+        prompt = self._download_prompt(session, challenge)
+        response = self._try_auto(0, session, prompt)
+        if not response.ready:
+            raise SourceNotReadyError(
+                "Không thể tự đăng nhập lại; user cần dùng /login."
+            )
 
     def _try_auto(
         self,
@@ -527,12 +572,6 @@ class UserSourcePool:
             session = self._sessions.get(telegram_user_id)
         if session is None:
             raise SourceNotReadyError("Chưa có phiên nguồn. Dùng /login trước.")
-        return session
-
-    def _require_ready_session(self, telegram_user_id: int) -> UserSourceSession:
-        session = self._require_session(telegram_user_id)
-        if not session.client.authenticated:
-            raise SourceNotReadyError("Source user session is not authenticated")
         return session
 
     def _discard_session(

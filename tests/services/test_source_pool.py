@@ -24,8 +24,10 @@ class FakeSourceClient:
         self.refresh_count = 0
         self.lookup_plates = []
         self.closed = False
+        self.start_login_count = 0
 
     def start_login(self):
+        self.start_login_count += 1
         return CaptchaChallenge("https://source.test/captcha.jpg")
 
     def refresh_captcha(self):
@@ -46,9 +48,14 @@ class FakeSourceClient:
 
     def lookup_candidate(self, plate):
         self.lookup_plates.append(plate)
-        if isinstance(self.lookup_outcome, BaseException):
-            raise self.lookup_outcome
-        return self.lookup_outcome
+        outcome = (
+            self.lookup_outcome.pop(0)
+            if isinstance(self.lookup_outcome, list)
+            else self.lookup_outcome
+        )
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return outcome
 
     def close(self):
         self.closed = True
@@ -348,7 +355,10 @@ def test_per_user_session_expiry_does_not_logout_other_user(tmp_path) -> None:
     database = Database(tmp_path / "per-user-expiry.sqlite3")
     database.initialize([1001, 1002])
     clients = [
-        FakeSourceClient(lookup_outcome=SessionExpiredError()),
+        FakeSourceClient(
+            lookup_outcome=SessionExpiredError(),
+            captcha_outcomes=[None, None],
+        ),
         FakeSourceClient(),
     ]
     pool = UserSourcePool(
@@ -358,7 +368,11 @@ def test_per_user_session_expiry_does_not_logout_other_user(tmp_path) -> None:
         TelegramView(),
         candidate_delay_seconds=0,
         recognizer=FakeRecognizer(
-            [CaptchaPrediction("GOOD", 0.99), CaptchaPrediction("GOOD", 0.99)]
+            [
+                CaptchaPrediction("GOOD", 0.99),
+                CaptchaPrediction("GOOD", 0.99),
+                CaptchaPrediction("GOOD", 0.99),
+            ]
         ),
     )
     pool.login(1001, "one", "one-pass")
@@ -369,3 +383,60 @@ def test_per_user_session_expiry_does_not_logout_other_user(tmp_path) -> None:
 
     assert pool.ready_for(1001) is False
     assert pool.ready_for(1002) is True
+
+
+def test_per_user_expired_session_reauthenticates_and_retries_same_candidate(
+    tmp_path,
+) -> None:
+    database = Database(tmp_path / "per-user-auto-reauth.sqlite3")
+    database.initialize([1001])
+    client = FakeSourceClient(
+        lookup_outcome=[SessionExpiredError(), VEHICLE],
+        captcha_outcomes=[None, None],
+    )
+    messages = []
+    pool = UserSourcePool(
+        lambda _username, _password: client,
+        LookupRepository(database),
+        lambda chat_id, text: messages.append((chat_id, text)),
+        TelegramView(),
+        candidate_delay_seconds=0,
+        recognizer=FakeRecognizer(
+            [CaptchaPrediction("FIRST", 0.99), CaptchaPrediction("RELOGIN", 0.99)]
+        ),
+    )
+    pool.login(1001, "account-one", "password-one")
+
+    pool.handler_factory(0)(LookupJob(1, 1001, 1, 5001, "00A00000T"))
+
+    assert client.start_login_count == 2
+    assert client.lookup_plates == ["00A00000T", "00A00000T"]
+    assert pool.ready_for(1001) is True
+    assert "Ô tô con" in messages[-1][1]
+    rows = LookupRepository(database).list_all()
+    assert len(rows) == 1
+    assert rows[0].status.value == "SUCCESS"
+
+
+def test_per_user_inactive_session_reauthenticates_before_lookup(tmp_path) -> None:
+    database = Database(tmp_path / "per-user-proactive-reauth.sqlite3")
+    database.initialize([1001])
+    client = FakeSourceClient(captcha_outcomes=[None, None])
+    pool = UserSourcePool(
+        lambda _username, _password: client,
+        LookupRepository(database),
+        lambda *_: None,
+        TelegramView(),
+        candidate_delay_seconds=0,
+        recognizer=FakeRecognizer(
+            [CaptchaPrediction("FIRST", 0.99), CaptchaPrediction("RELOGIN", 0.99)]
+        ),
+    )
+    pool.login(1001, "account-one", "password-one")
+    client.authenticated = False
+
+    pool.handler_factory(0)(LookupJob(1, 1001, 1, 5001, "00A00000T"))
+
+    assert client.start_login_count == 2
+    assert client.lookup_plates == ["00A00000T"]
+    assert pool.ready_for(1001) is True

@@ -46,6 +46,9 @@ def test_admin_and_user_help_explain_distinct_permissions() -> None:
     assert "/logout" in user
     assert "/approve" not in user
     assert "không lưu DB/log" in user
+    assert "tự giải CAPTCHA" in user
+    assert "server restart" in user
+    assert "tự đăng nhập lại" in admin
 
 
 def test_restricted_help_does_not_offer_login_as_available_command() -> None:
