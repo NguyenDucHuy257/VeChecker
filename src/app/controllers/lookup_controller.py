@@ -107,12 +107,12 @@ class LookupController:
             if suffix == "X":
                 raise InvalidPlateError("Biển 4 số chỉ hỗ trợ biến thể T/V.")
             if suffix is not None:
-                return (f"{source_base}{suffix}",)
-            return (source_base, f"{source_base}T", f"{source_base}V")
+                return (f"{source_base}{suffix.lower()}",)
+            return (source_base, f"{source_base}t", f"{source_base}v")
         if match.group("series") == "RM":
             if suffix is not None:
-                return (f"{source_base}{suffix}",)
-            return (source_base, f"{source_base}T", f"{source_base}V")
+                return (f"{source_base}{suffix.lower()}",)
+            return (source_base, f"{source_base}t", f"{source_base}v")
         if suffix is not None:
             return (normalized,)
         if match.group("series") in {"KT", "LD"}:

@@ -84,14 +84,15 @@ chấm cùng ký tự định dạng ẩn. Vì vậy `37rm00562`, `37-RM 005.62`
 `37RM00562` được chuẩn hóa thành cùng một giá trị.
 
 Biển 4 số như `37s3456` và series `RM` được thử theo thứ tự: payload lowercase
-nguyên bản, nối `T`, rồi nối `V`. Ví dụ: `37s3456`, `37s3456T`, `37s3456V` và
-`37rm00628`, `37rm00628T`, `37rm00628V`. Các hidden field WebForms
+nguyên bản, nối `t`, rồi nối `v`. Ví dụ: `37s3456`, `37s3456t`, `37s3456v` và
+`37rm00628`, `37rm00628t`, `37rm00628v`. Toàn bộ payload đặc biệt này được gửi
+ở dạng chữ thường. Các hidden field WebForms
 (`__VIEWSTATE`, `__VIEWSTATEGENERATOR`, `__EVENTVALIDATION`) luôn được lấy mới từ
 form ngay trước khi POST; không sử dụng lại giá trị mẫu hoặc request cũ.
 
 Với biển 5 số chưa có mã màu, bot thường thử lần lượt `T` (trắng), `X` (xanh),
 `V` (vàng). Riêng series `RM`, endpoint `ptpublicweb` dùng payload lowercase,
-ví dụ `txtBienDK=37rm00628`; bot thử nguyên bản rồi thêm `T/V`. Series `KT` và
+ví dụ `txtBienDK=37rm00628`; bot thử nguyên bản rồi thêm `t/v`. Series `KT` và
 `LD` được gửi nguyên bản. Input sai định dạng bị từ chối tại ứng dụng và
 không gửi lên website nguồn. Kết quả gồm biển đã tra, loại phương tiện, thương
 hiệu/nhãn hiệu và thời hạn kiểm định.

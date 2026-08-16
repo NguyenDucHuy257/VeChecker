@@ -47,33 +47,33 @@ def test_candidate_generation() -> None:
     assert LookupController.create_candidates("00a00000V") == ("00A00000V",)
     assert LookupController.create_candidates("37rm00562") == (
         "37rm00562",
-        "37rm00562T",
-        "37rm00562V",
+        "37rm00562t",
+        "37rm00562v",
     )
-    assert LookupController.create_candidates("37rm00562t") == ("37rm00562T",)
-    assert LookupController.create_candidates("37rm00562x") == ("37rm00562X",)
+    assert LookupController.create_candidates("37rm00562t") == ("37rm00562t",)
+    assert LookupController.create_candidates("37rm00562x") == ("37rm00562x",)
     assert LookupController.create_candidates("37-Rm 005.62") == (
         "37rm00562",
-        "37rm00562T",
-        "37rm00562V",
+        "37rm00562t",
+        "37rm00562v",
     )
     assert LookupController.create_candidates("37r\u200bm00562") == (
         "37rm00562",
-        "37rm00562T",
-        "37rm00562V",
+        "37rm00562t",
+        "37rm00562v",
     )
     assert LookupController.create_candidates("29ld01234") == ("29LD01234",)
     assert LookupController.create_candidates("29kt01234") == ("29KT01234",)
     assert LookupController.create_candidates("37s3456") == (
         "37s3456",
-        "37s3456T",
-        "37s3456V",
+        "37s3456t",
+        "37s3456v",
     )
-    assert LookupController.create_candidates("37S3456T") == ("37s3456T",)
+    assert LookupController.create_candidates("37S3456T") == ("37s3456t",)
     assert LookupController.create_candidates("37-S 34.56") == (
         "37s3456",
-        "37s3456T",
-        "37s3456V",
+        "37s3456t",
+        "37s3456v",
     )
     with pytest.raises(InvalidPlateError):
         LookupController.create_candidates("   ")
@@ -131,7 +131,7 @@ def test_rm_plate_uses_lowercase_series_without_color_suffix(tmp_path) -> None:
 
     result = lookup.lookup("37rm00562")
 
-    assert fake.plates == ["37rm00562", "37rm00562T", "37rm00562V"]
+    assert fake.plates == ["37rm00562", "37rm00562t", "37rm00562v"]
     assert len(result.successes) == 1
     assert len(repository.list_all()) == 3
 
@@ -142,7 +142,7 @@ def test_four_digit_plate_uses_lowercase_series_without_color_suffix(tmp_path) -
 
     result = lookup.lookup("37S3456")
 
-    assert fake.plates == ["37s3456", "37s3456T", "37s3456V"]
+    assert fake.plates == ["37s3456", "37s3456t", "37s3456v"]
     assert len(result.successes) == 1
     assert len(repository.list_all()) == 3
 
