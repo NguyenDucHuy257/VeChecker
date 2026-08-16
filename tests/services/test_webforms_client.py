@@ -293,6 +293,25 @@ def test_lookup_success_uses_fresh_form_state_and_raw_plate() -> None:
     assert session.calls[1][2]["allow_redirects"] is False
 
 
+def test_lookup_four_digit_plate_preserves_lowercase_source_payload() -> None:
+    session = FakeSession(
+        [
+            FakeResponse(fixture("lookup_form.html")),
+            FakeResponse(fixture("lookup_success_single.html")),
+        ]
+    )
+    client = make_client(session)
+    client.authenticated = True
+
+    client.lookup_candidate("37s3456")
+
+    payload = session.calls[1][2]["data"]
+    assert payload["txtBienDK"] == "37s3456"
+    assert payload["__VIEWSTATE"] == "lookup-synthetic-state"
+    assert payload["__VIEWSTATEGENERATOR"] == "LOOKUP01"
+    assert payload["__EVENTVALIDATION"] == "lookup-synthetic-validation"
+
+
 def test_lookup_500_retries_with_a_fresh_get_and_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

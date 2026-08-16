@@ -66,7 +66,8 @@ nhất một lần để xuất hiện trong `/users`.
 
 ## Định dạng biển số
 
-Input có dạng `2 số + 1–2 chữ + 5 số`, có thể kèm mã màu `T`, `X` hoặc `V`:
+Input có dạng `2 số + 1–2 chữ + 4–5 số`. Biển 5 số có thể kèm mã màu
+`T`, `X` hoặc `V`:
 
 ```text
 30A12345
@@ -75,11 +76,17 @@ Input có dạng `2 số + 1–2 chữ + 5 số`, có thể kèm mã màu `T`, `
 30A12345X
 37RM00562
 37RM00562T
+37S3456
 ```
 
 Bot không phân biệt chữ hoa/thường và tự loại khoảng trắng, dấu gạch ngang, dấu
 chấm cùng ký tự định dạng ẩn. Vì vậy `37rm00562`, `37-RM 005.62` và
 `37RM00562` được chuẩn hóa thành cùng một giá trị.
+
+Biển 4 số như `37s3456` được gửi tới endpoint đúng dạng lowercase
+`txtBienDK=37s3456`, không nối mã màu. Các hidden field WebForms (`__VIEWSTATE`,
+`__VIEWSTATEGENERATOR`, `__EVENTVALIDATION`) luôn được lấy mới từ form ngay trước
+khi POST; không sử dụng lại giá trị mẫu hoặc giá trị từ request cũ.
 
 Với biển 5 số chưa có mã màu, bot thường thử lần lượt `T` (trắng), `X` (xanh),
 `V` (vàng). Riêng series `RM`, endpoint `ptpublicweb` yêu cầu payload lowercase
@@ -308,7 +315,7 @@ cd /opt/VeChecker
 .venv/bin/python -m pip check
 ```
 
-Baseline hiện tại: `198 passed`.
+Baseline hiện tại: `202 passed`.
 
 Đánh giá model CAPTCHA bằng manifest TSV riêng tư:
 

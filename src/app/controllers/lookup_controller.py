@@ -21,7 +21,7 @@ from app.services.webforms_client import WebFormsClient
 
 _PLATE_PATTERN = re.compile(
     r"^(?P<province>[0-9]{2})(?P<series>[A-Z]{1,2})"
-    r"(?P<number>[0-9]{5})(?P<suffix>[TXV])?$"
+    r"(?P<number>[0-9]{4,5})(?P<suffix>[TXV])?$"
 )
 
 
@@ -96,9 +96,17 @@ class LookupController:
         match = _PLATE_PATTERN.fullmatch(normalized)
         if match is None:
             raise InvalidPlateError(
-                "Biển số phải có dạng 2 số, 1-2 chữ, 5 số và có thể kèm đuôi T/X/V."
+                "Biển số phải có dạng 2 số, 1-2 chữ, 4-5 số; biển 5 số có thể kèm T/X/V."
             )
-        if match.group("suffix") is not None:
+        number = match.group("number")
+        suffix = match.group("suffix")
+        if len(number) == 4:
+            if suffix is not None:
+                raise InvalidPlateError("Biển 4 số không dùng mã màu T/X/V.")
+            return (
+                f"{match.group('province')}{match.group('series').lower()}{number}",
+            )
+        if suffix is not None:
             return (normalized,)
         if match.group("series") == "RM":
             # The authenticated ptpublicweb endpoint expects RM trailer plates
@@ -117,7 +125,10 @@ class LookupController:
 
     @staticmethod
     def is_valid_plate(value: str) -> bool:
-        return _PLATE_PATTERN.fullmatch(value) is not None
+        match = _PLATE_PATTERN.fullmatch(value)
+        if match is None:
+            return False
+        return len(match.group("number")) == 5 or match.group("suffix") is None
 
     def lookup(self, input_plate: str) -> LookupRunResult:
         normalized = self.normalize_plate(input_plate)

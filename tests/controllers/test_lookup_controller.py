@@ -58,6 +58,9 @@ def test_candidate_generation() -> None:
     )
     assert LookupController.create_candidates("29ld01234") == ("29LD01234",)
     assert LookupController.create_candidates("29kt01234") == ("29KT01234",)
+    assert LookupController.create_candidates("37s3456") == ("37s3456",)
+    assert LookupController.create_candidates("37S3456") == ("37s3456",)
+    assert LookupController.create_candidates("37-S 34.56") == ("37s3456",)
     with pytest.raises(InvalidPlateError):
         LookupController.create_candidates("   ")
 
@@ -69,6 +72,7 @@ def test_candidate_generation() -> None:
         "37A1234567",
         "37ABC12345",
         "37R@M00562",
+        "37S3456T",
         "ABC",
     ],
 )
@@ -114,6 +118,17 @@ def test_rm_plate_uses_lowercase_series_without_color_suffix(tmp_path) -> None:
     result = lookup.lookup("37rm00562")
 
     assert fake.plates == ["37rm00562"]
+    assert len(result.successes) == 1
+    assert len(repository.list_all()) == 1
+
+
+def test_four_digit_plate_uses_lowercase_series_without_color_suffix(tmp_path) -> None:
+    fake = FakeClient([VEHICLE_T])
+    lookup, repository = controller(tmp_path, fake)
+
+    result = lookup.lookup("37S3456")
+
+    assert fake.plates == ["37s3456"]
     assert len(result.successes) == 1
     assert len(repository.list_all()) == 1
 
