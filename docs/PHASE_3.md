@@ -44,9 +44,9 @@ Rà soát toàn bộ hệ thống đã Pass Phase 1 và Phase 2, sửa lỗi cò
 |---|---|
 | Connect/read timeout | Retry tối đa theo cấu hình, sau đó trả `SOURCE_TIMEOUT` |
 | HTTP 5xx | Retry có delay giới hạn; không retry vô hạn |
-| HTTP 200 nhưng quay về login | Đánh dấu hết phiên, tạm dừng job và yêu cầu login |
+| HTTP 200 nhưng quay về login | Tự đăng nhập lại session chung rồi retry candidate một lần |
 | CAPTCHA auto sai | Lấy challenge mới và tiếp tục giải đến khi login |
-| CAPTCHA user sai ba lần | Dừng login flow và yêu cầu user chủ động `/login` lại |
+| CAPTCHA admin sai ba lần | Dừng login flow và yêu cầu admin chủ động `/login` lại |
 | Biển số sai định dạng | Trả `INVALID`, không retry |
 | Không candidate có dữ liệu | Trả `NOT_FOUND` |
 | Thiếu selector/bảng đổi cấu trúc | Trả `PARSE_ERROR`, không trả dữ liệu một phần |
@@ -121,11 +121,11 @@ Không bàn giao nếu còn lỗi làm sai kết quả, lộ bí mật, sai quy�
 - Migration v3 thêm constraint trạng thái ở tầng SQLite.
 - Input Telegram giới hạn 128 ký tự; queue và per-user rate limit giữ nguyên.
 - CAPTCHA tạm Phase 1 được dọn cả startup, sau nhập và shutdown; Telegram dùng bytes.
-- Mỗi Telegram user có source account/client/cookie/lock riêng trong RAM; `/logout`
-  đóng session, credential messages được xóa ngay qua Telegram API.
+- Một source account/client/cookie dùng chung do admin quản lý; một worker xử lý
+  FIFO, queue tối đa 20 job và tự đăng nhập lại khi session hết hạn.
 - Backup/restore SQLite cùng integrity check nằm ở `scripts/database_backup.py`.
 - Runbook/error code nằm trong `docs/OPERATIONS.md`.
-- Xác minh cuối: **188 passed**, `compileall` pass, `pip check` không có dependency lỗi.
+- Xác minh hiện tại: **193 passed**, `compileall` pass, `pip check` không có dependency lỗi.
 - DB vận hành đã backup, migrate schema v3 và đạt `PRAGMA integrity_check=ok`;
   không có lookup/update dở dang cần recovery tại thời điểm migrate.
 

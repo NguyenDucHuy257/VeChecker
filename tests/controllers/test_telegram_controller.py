@@ -41,30 +41,30 @@ class FakeSource:
     def __init__(self, *, ready=True) -> None:
         self.ready = ready
         self.authenticated_users = 1 if ready else 0
-        self.logins = []
-        self.logouts = []
+        self.login_count = 0
+        self.logout_count = 0
 
     def ready_for(self, _telegram_user_id):
         return self.ready
 
-    def login(self, telegram_user_id, username, password):
-        self.logins.append((telegram_user_id, username, password))
+    def start_login(self):
+        self.login_count += 1
         self.ready = True
         self.authenticated_users = 1
         return SourceLoginResponse("ready", None, True)
 
-    def submit_captcha(self, telegram_user_id, value):
+    def submit_captcha(self, value):
         return SourceLoginResponse("ready", None, True)
 
-    def refresh_captcha(self, telegram_user_id):
+    def refresh_captcha(self):
         return SourceLoginResponse(
             "refreshed",
             SourceLoginPrompt(1, b"new-image", 1, 3),
             False,
         )
 
-    def logout(self, telegram_user_id):
-        self.logouts.append(telegram_user_id)
+    def logout(self):
+        self.logout_count += 1
         was_ready = self.ready
         self.ready = False
         self.authenticated_users = 0
@@ -126,6 +126,17 @@ def test_admin_approves_user_and_direct_plate_is_enqueued(tmp_path) -> None:
     assert bot.messages[-1][1] == TelegramView.queued()
 
 
+def test_traacuu_alias_is_enqueued_for_active_user(tmp_path) -> None:
+    controller, users, workers, _, _ = make_controller(tmp_path)
+    users.get_or_create_pending(2)
+    users.update_status(2, UserStatus.ACTIVE)
+
+    controller.handle_update(telegram_update(1, 2, "/traacuu 00A00000T"))
+
+    assert len(workers.jobs) == 1
+    assert workers.jobs[0].input_plate == "00A00000T"
+
+
 def test_revoke_and_block_take_effect_immediately(tmp_path) -> None:
     controller, users, workers, source, _ = make_controller(tmp_path)
     users.get_or_create_pending(2)
@@ -138,7 +149,7 @@ def test_revoke_and_block_take_effect_immediately(tmp_path) -> None:
 
     assert workers.jobs == []
     assert users.get_by_telegram_id(2).status is UserStatus.BLOCKED
-    assert 2 in source.logouts
+    assert source.logout_count == 0
 
 
 def test_last_active_admin_cannot_be_blocked(tmp_path) -> None:
@@ -177,23 +188,21 @@ def test_queue_full_returns_busy(tmp_path) -> None:
     assert bot.messages[-1][1] == TelegramView.busy()
 
 
-def test_active_user_login_secrets_are_deleted_and_logout_clears_session(tmp_path) -> None:
+def test_only_admin_can_login_and_logout_shared_source(tmp_path) -> None:
     controller, users, _, _, bot = make_controller(tmp_path, source_ready=False)
     users.get_or_create_pending(2)
     users.update_status(2, UserStatus.ACTIVE)
 
     controller.handle_update(telegram_update(1, 2, "/login"))
-    controller.handle_update(telegram_update(2, 2, "private-user"))
-    controller.handle_update(telegram_update(3, 2, "private-password"))
-    controller.handle_update(telegram_update(4, 2, "/logout"))
+    controller.handle_update(telegram_update(2, 2, "/logout"))
+    controller.handle_update(telegram_update(3, 1, "/login"))
+    controller.handle_update(telegram_update(4, 1, "/logout"))
 
     source = controller.source_pool
-    assert source.logins == [(2, "private-user", "private-password")]
-    assert source.logouts == [2]
-    assert bot.deleted == [(2, 2), (2, 3)]
-    rendered = " ".join(text for _, text in bot.messages)
-    assert "private-user" not in rendered
-    assert "private-password" not in rendered
+    assert source.login_count == 1
+    assert source.logout_count == 1
+    assert bot.messages[0][1] == "Lệnh này chỉ dành cho admin."
+    assert bot.messages[1][1] == "Lệnh này chỉ dành cho admin."
     assert bot.messages[-1][1] == "Đã đăng xuất phiên nguồn."
 
 
@@ -202,7 +211,7 @@ def test_pending_user_cannot_start_source_login(tmp_path) -> None:
 
     controller.handle_update(telegram_update(1, 2, "/login"))
 
-    assert source.logins == []
+    assert source.login_count == 0
     assert bot.messages[-1][1] == TelegramView.pending()
 
 

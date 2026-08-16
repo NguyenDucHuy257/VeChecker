@@ -42,12 +42,12 @@ def test_admin_and_user_help_explain_distinct_permissions() -> None:
     assert "/approve <telegram_id>" in admin
     assert "/block <telegram_id>" in admin
     assert "toàn bộ quyền user" in admin
-    assert "/login" in user
-    assert "/logout" in user
+    assert "/login" not in user
+    assert "/logout" not in user
     assert "/approve" not in user
-    assert "không lưu DB/log" in user
-    assert "tự giải CAPTCHA" in user
-    assert "server restart" in user
+    assert "xử lý lần lượt" in user
+    assert "/login" in admin
+    assert "/logout" in admin
     assert "tự đăng nhập lại" in admin
 
 

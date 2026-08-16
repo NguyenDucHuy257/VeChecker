@@ -106,6 +106,17 @@ class WebFormsClient:
         if callable(close):
             close()
 
+    def reset_authentication(self) -> None:
+        """Drop cookies and WebForms state while retaining configured credentials."""
+
+        cookies = getattr(self.session, "cookies", None)
+        clear = getattr(cookies, "clear", None)
+        if callable(clear):
+            clear()
+        self.authenticated = False
+        self._login_state = None
+        self._captcha_url = None
+
     def start_login(self) -> CaptchaChallenge:
         self.authenticated = False
         self._login_state = None

@@ -1,8 +1,8 @@
 # DKTLE — Phase 3
 
-Ứng dụng MVC cho phép mỗi Telegram user dùng tài khoản `app.vr.org.vn` riêng,
-giữ WebForms session riêng để tra cứu nhiều lần, xử lý qua hàng đợi worker giới
-hạn và lưu lịch sử kết quả vào SQLite.
+Ứng dụng MVC dùng một tài khoản `app.vr.org.vn` do admin quản lý, giữ một
+WebForms session dùng chung và xử lý tra cứu Telegram tuần tự qua hàng đợi giới
+hạn trước khi lưu lịch sử kết quả vào SQLite.
 
 ## Cấu trúc MVC
 
@@ -11,7 +11,7 @@ hạn và lưu lịch sử kết quả vào SQLite.
 - `src/app/controllers`: điều phối đăng nhập, candidate `T/V`, tra cứu và ghi DB.
 - `src/app/services`: HTTP WebForms, parser HTML, CAPTCHA file và error codes.
 
-Phase 2 bổ sung `telegram_controller`, `telegram_view`, Telegram long polling, worker pool có session nguồn riêng và CAPTCHA ONNX có fallback nhập tay.
+Phase 2 bổ sung `telegram_controller`, `telegram_view`, Telegram long polling, hàng đợi nguồn và CAPTCHA ONNX có fallback nhập tay.
 
 ## Cài đặt trên Windows
 
@@ -24,8 +24,8 @@ Copy-Item .env.example .env
 
 Điền các giá trị thật vào `.env`:
 
-- `VR_USERNAME`, `VR_PASSWORD`: chỉ cần cho script Phase 1; Telegram không dùng
-  credential nguồn toàn cục.
+- `VR_USERNAME`, `VR_PASSWORD`: account nguồn dùng chung; chỉ admin điều khiển
+  đăng nhập qua Telegram, user không được xem credential.
 - `TELEGRAM_ADMIN_IDS`: một hoặc nhiều numeric ID, cách nhau bằng dấu phẩy.
 - `TELEGRAM_BOT_TOKEN`: token lấy từ BotFather; không ghi vào log hoặc Git.
 - `CANDIDATE_DELAY_SECONDS=2`: khoảng nghỉ tối thiểu giữa hai candidate `T/V`.
@@ -44,19 +44,17 @@ mới fallback nhập tay. Chi tiết accuracy và giới hạn đánh giá nằ
 .\.venv\Scripts\python.exe scripts\telegram_bot.py
 ```
 
-User mới gửi `/start`, sau đó admin dùng `/approve <telegram_id>`. Mỗi user ACTIVE
-dùng `/login`, gửi username rồi password nguồn trong private chat; bot gọi
-`deleteMessage` ngay và chỉ giữ credential/session trong RAM. Sau khi đăng nhập,
-user tra nhiều biển số bằng `/tracuu <biển_số>` hoặc gửi trực tiếp. `/logout` đóng
-session riêng và xóa credential khỏi RAM.
+User mới gửi `/start`, sau đó admin dùng `/approve <telegram_id>`. Admin dùng
+`/login` để khởi tạo account nguồn đã cấu hình. User ACTIVE chỉ tra cứu bằng
+`/tracuu <biển_số>`, `/traacuu <biển_số>` hoặc gửi trực tiếp biển số. Khi session
+hết hạn, bot tự đăng nhập lại rồi retry đúng candidate một lần.
 
-Lệnh user: `/help`, `/login`, `/logout`, `/status`, `/captcha`,
-`/refresh_captcha`, `/tracuu`. Lệnh quản trị: `/approve`, `/revoke`, `/block`,
-`/users`. Nội dung `/help` tự thay đổi theo role và trạng thái PENDING/ACTIVE/BLOCKED.
+Lệnh user: `/help`, `/status`, `/tracuu`, `/traacuu`. Lệnh admin bổ sung `/login`,
+`/logout`, `/captcha`, `/refresh_captcha`, `/approve`, `/revoke`, `/block`,
+`/users`. Nội dung `/help` tự thay đổi theo role và trạng thái.
 
-Mặc định `MAX_WORKERS=2` và `SOURCE_SERIALIZE_REQUESTS=false`. Job cùng user luôn
-dùng lock tuần tự trên session của chính họ; các user khác nhau có thể chạy song
-song bằng account/cookie/WebForms state độc lập.
+Bot luôn tạo đúng một source worker để không có request WebForms chạy đồng thời.
+`JOB_QUEUE_SIZE=20` giới hạn tổng số job đã nhận; các job được xử lý FIFO.
 
 Đánh giá model trên manifest TSV riêng tư (`đường_dẫn_ảnh<TAB>nhãn`), tối thiểu 50 mẫu:
 
@@ -116,7 +114,7 @@ Output nằm trong `runtime/sanitized_har` và đã được Git ignore. Script 
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-Baseline kỹ thuật Phase 3 ngày 16/08/2026: `188 passed`. `compileall` và
+Baseline kỹ thuật Phase 3 ngày 16/08/2026: `193 passed`. `compileall` và
 `pip check` đều pass.
 
 Phase 3 bổ sung retry timeout/network/HTTP 5xx theo cấu hình, recovery job sau

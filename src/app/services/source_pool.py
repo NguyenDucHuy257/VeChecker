@@ -38,6 +38,28 @@ class SourceLoginResponse:
     ready: bool
 
 
+class _ReauthenticatingClient:
+    """Retry one candidate after transparently rebuilding an expired session."""
+
+    def __init__(
+        self,
+        client: WebFormsClient,
+        reauthenticate: Callable[[], None],
+    ) -> None:
+        self._client = client
+        self._reauthenticate = reauthenticate
+
+    def lookup_candidate(self, plate: str):
+        try:
+            return self._client.lookup_candidate(plate)
+        except SessionExpiredError:
+            self._client.authenticated = False
+            self._reauthenticate()
+            # Retry exactly once so a broken source cannot keep the FIFO worker
+            # occupied indefinitely.
+            return self._client.lookup_candidate(plate)
+
+
 class SourcePool:
     def __init__(
         self,
@@ -75,6 +97,7 @@ class SourcePool:
         self._pending_index: int | None = None
         self._pending_challenge: CaptchaChallenge | None = None
         self._captcha_attempt = 1
+        self._automatic_relogin_enabled = True
 
     @property
     def ready(self) -> bool:
@@ -84,9 +107,28 @@ class SourcePool:
     def authenticated_workers(self) -> int:
         return sum(1 for client in self.clients if client.authenticated)
 
+    @property
+    def authenticated_users(self) -> int:
+        """Compatibility metric: the shared source has zero or one live session."""
+
+        return int(self.ready)
+
+    def ready_for(self, _telegram_user_id: int) -> bool:
+        return self.ready
+
     def close(self) -> None:
+        self._automatic_relogin_enabled = False
         for client in self.clients:
             client.close()
+
+    def logout(self) -> bool:
+        with self._login_lock, self._source_guard():
+            was_ready = self.ready
+            self._automatic_relogin_enabled = False
+            self._clear_pending()
+            for client in self.clients:
+                client.reset_authentication()
+            return was_ready
 
     def handler_factory(self, worker_index: int) -> JobHandler:
         if worker_index >= len(self.clients):
@@ -94,26 +136,32 @@ class SourcePool:
         client = self.clients[worker_index]
 
         def handle(job: LookupJob) -> None:
-            if not client.authenticated:
-                self.send_message(job.chat_id, self.view.source_not_ready())
-                raise SourceNotReadyError("Source worker is not authenticated")
-            controller = LookupController(
-                client,
-                self.lookups,
-                user_id=job.database_user_id,
-                candidate_delay_seconds=self.candidate_delay_seconds,
-            )
             guard = self._source_lock if self._source_lock is not None else nullcontext()
-            try:
-                with guard:
+            with self._login_lock, guard:
+                try:
+                    if not client.authenticated:
+                        self._reauthenticate_locked()
+                    lookup_client = _ReauthenticatingClient(
+                        client,
+                        self._reauthenticate_locked,
+                    )
+                    controller = LookupController(
+                        lookup_client,
+                        self.lookups,
+                        user_id=job.database_user_id,
+                        candidate_delay_seconds=self.candidate_delay_seconds,
+                    )
                     result = controller.lookup(job.input_plate)
-            except SessionExpiredError:
-                client.authenticated = False
-                self.send_message(job.chat_id, self.view.source_not_ready())
-                raise
-            except VrServiceError:
-                self.send_message(job.chat_id, "Tra cứu thất bại do nguồn tạm thời không ổn định.")
-                raise
+                except (SessionExpiredError, AuthenticationError, SourceNotReadyError):
+                    client.authenticated = False
+                    self.send_message(job.chat_id, self.view.source_not_ready())
+                    raise
+                except VrServiceError:
+                    self.send_message(
+                        job.chat_id,
+                        "Tra cứu thất bại do nguồn tạm thời không ổn định.",
+                    )
+                    raise
 
             if result.successes:
                 self.send_message(job.chat_id, self.view.format_results(result.successes))
@@ -126,22 +174,37 @@ class SourcePool:
 
     def start_login(self) -> SourceLoginResponse:
         with self._login_lock, self._source_guard():
-            if self.ready:
-                return SourceLoginResponse("Tất cả worker đã đăng nhập.", None, True)
-            index = self._next_unauthenticated_index()
-            assert index is not None
-            client = self.clients[index]
-            challenge = client.start_login()
-            self._pending_index = index
-            self._pending_challenge = challenge
-            self._captcha_attempt = 1
-            prompt = self._download_prompt(index, challenge)
-            response = SourceLoginResponse(
-                f"Nhập CAPTCHA cho worker {index + 1}/{len(self.clients)}.",
-                prompt,
-                False,
+            self._automatic_relogin_enabled = True
+            return self._start_login_locked()
+
+    def _start_login_locked(self) -> SourceLoginResponse:
+        if self.ready:
+            return SourceLoginResponse("Session nguồn dùng chung đang hoạt động.", None, True)
+        index = self._next_unauthenticated_index()
+        assert index is not None
+        client = self.clients[index]
+        challenge = client.start_login()
+        self._pending_index = index
+        self._pending_challenge = challenge
+        self._captcha_attempt = 1
+        prompt = self._download_prompt(index, challenge)
+        response = SourceLoginResponse(
+            "Đang đăng nhập tài khoản nguồn dùng chung.",
+            prompt,
+            False,
+        )
+        return self._try_auto(response)
+
+    def _reauthenticate_locked(self) -> None:
+        if not self._automatic_relogin_enabled:
+            raise SourceNotReadyError(
+                "Session nguồn đã được admin đăng xuất; admin cần dùng /login."
             )
-            return self._try_auto(response)
+        response = self._start_login_locked()
+        if not response.ready:
+            raise SourceNotReadyError(
+                "Không thể tự đăng nhập lại session nguồn; admin cần dùng /login."
+            )
 
     def submit_captcha(self, value: str) -> SourceLoginResponse:
         with self._login_lock, self._source_guard():
@@ -258,7 +321,7 @@ class SourcePool:
         self._clear_pending()
         next_index = self._next_unauthenticated_index()
         if next_index is None:
-            return SourceLoginResponse("Đăng nhập nguồn hoàn tất cho tất cả worker.", None, True)
+            return SourceLoginResponse("Đăng nhập session nguồn dùng chung thành công.", None, True)
         next_client = self.clients[next_index]
         challenge = next_client.start_login()
         self._pending_index = next_index
@@ -298,28 +361,6 @@ class UserSourceSession:
     lock: RLock = field(default_factory=RLock)
     pending_challenge: CaptchaChallenge | None = None
     captcha_attempt: int = 1
-
-
-class _ReauthenticatingClient:
-    """Retry one candidate after transparently rebuilding an expired session."""
-
-    def __init__(
-        self,
-        client: WebFormsClient,
-        reauthenticate: Callable[[], None],
-    ) -> None:
-        self._client = client
-        self._reauthenticate = reauthenticate
-
-    def lookup_candidate(self, plate: str):
-        try:
-            return self._client.lookup_candidate(plate)
-        except SessionExpiredError:
-            self._client.authenticated = False
-            self._reauthenticate()
-            # Retry exactly once. A second expiry is surfaced to the worker so a
-            # broken source cannot keep one Telegram job alive indefinitely.
-            return self._client.lookup_candidate(plate)
 
 
 class UserSourcePool:

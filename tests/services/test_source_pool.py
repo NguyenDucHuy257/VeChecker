@@ -4,7 +4,12 @@ import pytest
 
 from app.database import Database
 from app.models import LookupRepository
-from app.services.errors import AuthenticationError, CaptchaInvalidError, SessionExpiredError
+from app.services.errors import (
+    AuthenticationError,
+    CaptchaInvalidError,
+    SessionExpiredError,
+    SourceNotReadyError,
+)
 from app.services.captcha_onnx import CaptchaModelError, CaptchaPrediction
 from app.services.source_pool import SourcePool, UserSourcePool
 from app.services.vr_parser import VehicleResult
@@ -59,6 +64,9 @@ class FakeSourceClient:
 
     def close(self):
         self.closed = True
+
+    def reset_authentication(self):
+        self.authenticated = False
 
 
 def make_pool(tmp_path, clients, messages):
@@ -133,20 +141,58 @@ def test_worker_handler_uses_its_own_client_and_database_user(tmp_path) -> None:
     assert "Ô tô con" in messages[0][1]
 
 
-def test_session_expiry_marks_only_affected_worker_not_ready(tmp_path) -> None:
+def test_manual_shared_session_expiry_requires_admin_login(tmp_path) -> None:
     messages = []
     clients = [FakeSourceClient(lookup_outcome=SessionExpiredError()), FakeSourceClient()]
     for client in clients:
         client.authenticated = True
     pool = make_pool(tmp_path, clients, messages)
 
-    with pytest.raises(SessionExpiredError):
+    with pytest.raises(SourceNotReadyError):
         pool.handler_factory(0)(LookupJob(1, 1001, 1, 5001, "00A00000T"))
 
     assert clients[0].authenticated is False
     assert clients[1].authenticated is True
     assert pool.ready is False
     assert messages[-1][1] == TelegramView.source_not_ready()
+
+
+def test_shared_session_auto_reauthenticates_and_retries_same_candidate(tmp_path) -> None:
+    database = Database(tmp_path / "shared-auto-reauth.sqlite3")
+    database.initialize([1001])
+    client = FakeSourceClient(
+        lookup_outcome=[SessionExpiredError(), VEHICLE],
+        captcha_outcomes=[None, None],
+    )
+    messages = []
+    pool = SourcePool(
+        [client],
+        LookupRepository(database),
+        lambda chat_id, text: messages.append((chat_id, text)),
+        TelegramView(),
+        candidate_delay_seconds=0,
+        captcha_mode="auto",
+        recognizer=FakeRecognizer(
+            [CaptchaPrediction("FIRST", 0.99), CaptchaPrediction("RELOGIN", 0.99)]
+        ),
+    )
+    assert pool.start_login().ready is True
+
+    pool.handler_factory(0)(LookupJob(1, 1001, 1, 5001, "00A00000T"))
+
+    assert client.start_login_count == 2
+    assert client.lookup_plates == ["00A00000T", "00A00000T"]
+    assert pool.ready_for(9999) is True
+    assert "Ô tô con" in messages[-1][1]
+    rows = LookupRepository(database).list_all()
+    assert len(rows) == 1
+    assert rows[0].status.value == "SUCCESS"
+    assert pool.logout() is True
+    assert pool.ready is False
+
+    with pytest.raises(SourceNotReadyError):
+        pool.handler_factory(0)(LookupJob(2, 1001, 1, 5001, "00A00000T"))
+    assert client.start_login_count == 2
 
 
 def test_manual_mode_never_calls_recognizer(tmp_path) -> None:

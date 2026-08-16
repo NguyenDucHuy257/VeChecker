@@ -10,7 +10,7 @@ from app.controllers.telegram_controller import TelegramController, UserRateLimi
 from app.database import Database
 from app.logging_config import configure_logging
 from app.models import LookupRepository, TelegramUpdateRepository, UserRepository
-from app.services.source_pool import UserSourcePool
+from app.services.source_pool import SourcePool
 from app.services.captcha_onnx import OnnxCaptchaRecognizer
 from app.services.telegram_api import TelegramBotClient
 from app.services.telegram_polling import TelegramPollingService
@@ -24,7 +24,7 @@ class TelegramApplication:
     config: AppConfig
     database: Database
     bot: TelegramBotClient
-    source_pool: UserSourcePool
+    source_pool: SourcePool
     workers: WorkerService
     controller: TelegramController
     polling: TelegramPollingService
@@ -52,7 +52,7 @@ def create_telegram_application(
 ) -> TelegramApplication:
     config = load_config(
         env_file,
-        require_vr_credentials=False,
+        require_vr_credentials=True,
         require_telegram_token=True,
     )
     configure_logging(config.log_level, secrets=config.log_secrets)
@@ -68,24 +68,23 @@ def create_telegram_application(
         timeout_seconds=max(35.0, config.telegram_poll_timeout_seconds + 5.0),
     )
     view = TelegramView()
-    def client_factory(username: str, password: str) -> WebFormsClient:
-        return WebFormsClient(
-            base_url=config.vr_base_url,
-            username=username,
-            password=password,
-            timeout_seconds=config.request_timeout_seconds,
-            verify_ssl=config.verify_ssl,
-            request_attempts=config.source_request_attempts,
-            retry_delay_seconds=config.source_retry_delay_seconds,
-        )
+    source_client = WebFormsClient(
+        base_url=config.vr_base_url,
+        username=config.vr_username,
+        password=config.vr_password,
+        timeout_seconds=config.request_timeout_seconds,
+        verify_ssl=config.verify_ssl,
+        request_attempts=config.source_request_attempts,
+        retry_delay_seconds=config.source_retry_delay_seconds,
+    )
 
-    source_pool = UserSourcePool(
-        client_factory,
+    source_pool = SourcePool(
+        [source_client],
         LookupRepository(database),
         telegram_bot.send_message,
         view,
         candidate_delay_seconds=config.candidate_delay_seconds,
-        serialize_requests=config.source_serialize_requests,
+        serialize_requests=True,
         max_captcha_attempts=config.max_captcha_attempts,
         captcha_mode=config.captcha_mode,
         recognizer=recognizer,
@@ -94,7 +93,7 @@ def create_telegram_application(
     workers = WorkerService(
         source_pool.handler_factory,
         TelegramUpdateRepository(database),
-        max_workers=config.max_workers,
+        max_workers=1,
         queue_size=config.job_queue_size,
     )
     controller = TelegramController(

@@ -14,26 +14,20 @@ class TelegramView:
     def user_help() -> str:
         return """HƯỚNG DẪN USER
 
-Quyền: dùng tài khoản nguồn riêng của bạn để đăng nhập và tra cứu. Bạn không thể quản lý user khác.
+Quyền: tra cứu bằng session nguồn dùng chung do admin quản lý. Bạn không thể xem tài khoản nguồn hoặc quản lý user khác.
 
 /start — xem trạng thái phê duyệt
 /help — mở hướng dẫn này
-/login — bắt đầu đăng nhập nguồn riêng
-/cancel — hủy bước nhập username/password
-/status — xem session của bạn và hàng đợi
+/status — xem session dùng chung và hàng đợi
 /tracuu <biển_số> — gửi yêu cầu tra cứu
+/traacuu <biển_số> — bí danh của /tracuu
 <biển_số> — có thể gửi trực tiếp, không cần lệnh
-/logout — đóng session và xóa credential khỏi RAM
-/captcha <mã> — nhập tay nếu model CAPTCHA lỗi
-/refresh_captcha — đổi ảnh CAPTCHA nhập tay
 
 Cách dùng:
-1. Gửi /login.
-2. Gửi username nguồn khi bot yêu cầu.
-3. Gửi password khi bot yêu cầu.
-4. Hai tin nhắn credential sẽ được bot xóa ngay và không lưu DB/log.
-5. Khi session nguồn hết hạn, bot tự giải CAPTCHA, đăng nhập lại bằng account trước đó và tiếp tục tra cứu.
-6. Credential chỉ giữ trong RAM; /logout hoặc server restart sẽ yêu cầu /login lại.
+1. Chờ admin khởi tạo session nguồn.
+2. Gửi /tracuu <biển_số> hoặc gửi trực tiếp biển số.
+3. Yêu cầu được xếp hàng và xử lý lần lượt, không chạy đồng thời.
+4. Khi session nguồn hết hạn, bot tự đăng nhập lại rồi tiếp tục job.
 
 Biển số hợp lệ: 2 số + 1 chữ + 5 số, có thể kèm T/V. Không có đuôi sẽ thử cả T và V."""
 
@@ -41,7 +35,7 @@ Biển số hợp lệ: 2 số + 1 chữ + 5 số, có thể kèm T/V. Không c�
     def admin_help() -> str:
         return """HƯỚNG DẪN ADMIN
 
-Admin có toàn bộ quyền user nhưng vẫn phải /login bằng tài khoản nguồn riêng. Admin không xem được credential, cookie hoặc session của user khác.
+Admin có toàn bộ quyền user và đại diện quản lý một session nguồn dùng chung. Credential nguồn lấy từ cấu hình server, không hiển thị cho Telegram user.
 
 Lệnh quản trị:
 /users — liệt kê Telegram ID, role và trạng thái
@@ -52,15 +46,15 @@ Lệnh quản trị:
 Không thể revoke/block admin ACTIVE cuối cùng. User phải gửi /start ít nhất một lần trước khi xuất hiện trong /users.
 
 Lệnh sử dụng cá nhân:
-/login — nhập username/password nguồn riêng
-/cancel — hủy nhập credential
-/status — session của bạn, tổng session active và queue
+/login — đăng nhập account nguồn đã cấu hình trên server
+/status — trạng thái session dùng chung và queue
 /tracuu <biển_số> — tra cứu; cũng có thể gửi biển số trực tiếp
-/logout — đóng session riêng
+/traacuu <biển_số> — bí danh của /tracuu
+/logout — đóng session dùng chung
 /captcha <mã> và /refresh_captcha — fallback CAPTCHA nhập tay
 /help — mở hướng dẫn này
 
-Nếu session nguồn hết hạn, bot tự đăng nhập lại và tiếp tục tra cứu. Credential được xóa khỏi chat ngay, chỉ giữ trong RAM và mất khi logout/revoke/block/restart."""
+Mọi yêu cầu dùng chung một hàng đợi và chỉ một job chạm website nguồn tại một thời điểm. Nếu session hết hạn, bot tự đăng nhập lại và tiếp tục tra cứu."""
 
     @staticmethod
     def pending_help() -> str:
@@ -70,7 +64,7 @@ Bạn chưa được phép đăng nhập nguồn hoặc tra cứu.
 /start — xem trạng thái hiện tại
 /help — mở hướng dẫn này
 
-Hãy chờ admin kiểm tra /users và dùng /approve <telegram_id>. Sau khi thành ACTIVE, dùng /login với tài khoản nguồn riêng của bạn."""
+Hãy chờ admin kiểm tra /users và dùng /approve <telegram_id>. Sau khi thành ACTIVE, bạn chỉ cần gửi biển số để tra cứu."""
 
     @staticmethod
     def blocked_help() -> str:
@@ -93,8 +87,8 @@ Bạn không thể /login hoặc tra cứu cho đến khi admin dùng /approve <
     @staticmethod
     def approved() -> str:
         return (
-            "Tài khoản đã được phê duyệt. Dùng /login để đăng nhập nguồn riêng, "
-            "sau đó gửi biển số hoặc /tracuu <biển số>."
+            "Tài khoản đã được phê duyệt. Gửi biển số hoặc "
+            "/tracuu <biển số> để tra cứu."
         )
 
     @staticmethod
@@ -111,7 +105,7 @@ Bạn không thể /login hoặc tra cứu cho đến khi admin dùng /approve <
 
     @staticmethod
     def source_not_ready() -> str:
-        return "Bạn chưa đăng nhập nguồn hoặc phiên đã hết hạn. Dùng /login."
+        return "Session nguồn chưa sẵn sàng. Vui lòng báo admin dùng /login."
 
     @staticmethod
     def format_results(results: Iterable[Any]) -> str:

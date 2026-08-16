@@ -567,3 +567,16 @@ def test_close_closes_injected_session() -> None:
     client.close()
 
     assert session.closed is True
+
+
+def test_reset_authentication_clears_cookies_but_keeps_client_reusable() -> None:
+    session = requests.Session()
+    session.cookies.set("ASP.NET_SessionId", "synthetic-cookie")
+    client = make_client(session)
+    client.authenticated = True
+
+    client.reset_authentication()
+
+    assert client.authenticated is False
+    assert len(session.cookies) == 0
+    assert client.username == "synthetic-user"

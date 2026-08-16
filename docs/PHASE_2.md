@@ -6,8 +6,8 @@ Kết nối lõi tra cứu Phase 1 với Telegram, kiểm soát quyền bằng a
 
 Không làm trong Phase 2: web admin, webhook public, Redis, nhiều tài khoản nguồn hoặc tự huấn luyện model liên tục.
 
-> Phase 3 đã thay kiến trúc source dùng chung bằng account/session riêng cho từng
-> Telegram user. Phần dưới đây được giữ làm lịch sử thiết kế Phase 2.
+> Kiến trúc vận hành hiện tại dùng lại một account/session nguồn chung, một
+> worker FIFO và queue giới hạn. Phần dưới đây chủ yếu được giữ làm lịch sử.
 
 ## 2. Điều kiện bắt đầu
 
