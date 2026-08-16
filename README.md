@@ -50,8 +50,9 @@ dùng `/login`, gửi username rồi password nguồn trong private chat; bot g�
 user tra nhiều biển số bằng `/tracuu <biển_số>` hoặc gửi trực tiếp. `/logout` đóng
 session riêng và xóa credential khỏi RAM.
 
-Lệnh user: `/login`, `/logout`, `/status`, `/captcha`, `/refresh_captcha`,
-`/tracuu`. Lệnh quản trị: `/approve`, `/revoke`, `/block`, `/users`.
+Lệnh user: `/help`, `/login`, `/logout`, `/status`, `/captcha`,
+`/refresh_captcha`, `/tracuu`. Lệnh quản trị: `/approve`, `/revoke`, `/block`,
+`/users`. Nội dung `/help` tự thay đổi theo role và trạng thái PENDING/ACTIVE/BLOCKED.
 
 Mặc định `MAX_WORKERS=2` và `SOURCE_SERIALIZE_REQUESTS=false`. Job cùng user luôn
 dùng lock tuần tự trên session của chính họ; các user khác nhau có thể chạy song
@@ -115,7 +116,7 @@ Output nằm trong `runtime/sanitized_har` và đã được Git ignore. Script 
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-Baseline kỹ thuật Phase 3 ngày 16/08/2026: `185 passed`. `compileall` và
+Baseline kỹ thuật Phase 3 ngày 16/08/2026: `188 passed`. `compileall` và
 `pip check` đều pass.
 
 Phase 3 bổ sung retry timeout/network/HTTP 5xx theo cấu hình, recovery job sau

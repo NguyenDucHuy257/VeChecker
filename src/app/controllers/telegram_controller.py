@@ -105,6 +105,18 @@ class TelegramController:
             self._send_access_state(chat_id, user.status)
             return
 
+        if command == "/help":
+            if user.status is UserStatus.PENDING:
+                help_text = self.view.pending_help()
+            elif user.status is UserStatus.BLOCKED:
+                help_text = self.view.blocked_help()
+            elif user.role is UserRole.ADMIN:
+                help_text = self.view.admin_help()
+            else:
+                help_text = self.view.user_help()
+            self.bot.send_message(chat_id, help_text)
+            return
+
         if command in {
             "/approve",
             "/revoke",

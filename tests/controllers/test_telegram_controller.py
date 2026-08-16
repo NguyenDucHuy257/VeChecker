@@ -206,6 +206,25 @@ def test_pending_user_cannot_start_source_login(tmp_path) -> None:
     assert bot.messages[-1][1] == TelegramView.pending()
 
 
+def test_help_is_selected_by_role_and_access_state(tmp_path) -> None:
+    controller, users, _, _, bot = make_controller(tmp_path)
+    users.get_or_create_pending(2)
+    users.get_or_create_pending(3)
+    users.update_status(3, UserStatus.BLOCKED)
+    users.get_or_create_pending(4)
+    users.update_status(4, UserStatus.ACTIVE)
+
+    controller.handle_update(telegram_update(1, 1, "/help"))
+    controller.handle_update(telegram_update(2, 2, "/help"))
+    controller.handle_update(telegram_update(3, 3, "/help"))
+    controller.handle_update(telegram_update(4, 4, "/help"))
+
+    assert bot.messages[0][1] == TelegramView.admin_help()
+    assert bot.messages[1][1] == TelegramView.pending_help()
+    assert bot.messages[2][1] == TelegramView.blocked_help()
+    assert bot.messages[3][1] == TelegramView.user_help()
+
+
 def test_group_updates_are_ignored(tmp_path) -> None:
     controller, users, workers, _, bot = make_controller(tmp_path)
 

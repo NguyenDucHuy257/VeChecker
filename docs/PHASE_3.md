@@ -125,7 +125,7 @@ Không bàn giao nếu còn lỗi làm sai kết quả, lộ bí mật, sai quy�
   đóng session, credential messages được xóa ngay qua Telegram API.
 - Backup/restore SQLite cùng integrity check nằm ở `scripts/database_backup.py`.
 - Runbook/error code nằm trong `docs/OPERATIONS.md`.
-- Xác minh cuối: **185 passed**, `compileall` pass, `pip check` không có dependency lỗi.
+- Xác minh cuối: **188 passed**, `compileall` pass, `pip check` không có dependency lỗi.
 - DB vận hành đã backup, migrate schema v3 và đạt `PRAGMA integrity_check=ok`;
   không có lookup/update dở dang cần recovery tại thời điểm migrate.
 

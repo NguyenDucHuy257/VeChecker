@@ -4,7 +4,7 @@
 
 | Hạng mục | Kết quả |
 |---|---:|
-| Pytest | 185 passed |
+| Pytest | 188 passed |
 | Compile `src` và `scripts` | PASS |
 | `pip check` | PASS — không có dependency lỗi |
 | SQLite schema | v3 |

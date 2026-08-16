@@ -33,3 +33,21 @@ def test_two_candidates_are_separated() -> None:
     )
 
     assert "\n\n" in TelegramView.format_results([first, second])
+
+
+def test_admin_and_user_help_explain_distinct_permissions() -> None:
+    admin = TelegramView.admin_help()
+    user = TelegramView.user_help()
+
+    assert "/approve <telegram_id>" in admin
+    assert "/block <telegram_id>" in admin
+    assert "toàn bộ quyền user" in admin
+    assert "/login" in user
+    assert "/logout" in user
+    assert "/approve" not in user
+    assert "không lưu DB/log" in user
+
+
+def test_restricted_help_does_not_offer_login_as_available_command() -> None:
+    assert "chưa được phép đăng nhập" in TelegramView.pending_help()
+    assert "không thể /login" in TelegramView.blocked_help()
