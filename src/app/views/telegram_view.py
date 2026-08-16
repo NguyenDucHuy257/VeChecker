@@ -29,7 +29,7 @@ Cách dùng:
 3. Yêu cầu được xếp hàng và xử lý lần lượt, không chạy đồng thời.
 4. Khi session nguồn hết hạn, bot tự đăng nhập lại rồi tiếp tục job.
 
-Biển số hợp lệ: 2 số + 1-2 chữ + 5 số, có thể kèm T/V. Ví dụ: 30A12345, 37RM00562. Biển một chữ không có đuôi sẽ thử T/V; biển hai chữ được tra nguyên bản."""
+Biển số hợp lệ: 2 số + 1-2 chữ + 5 số, có thể kèm mã màu T/X/V. Ví dụ: 30A12345, 37RM00562. Biển 5 số chưa có mã màu sẽ thử T/X/V; series KT/LD được tra nguyên bản."""
 
     @staticmethod
     def admin_help() -> str:
@@ -103,6 +103,13 @@ Bạn không thể /login hoặc tra cứu cho đến khi admin dùng /approve <
     @staticmethod
     def invalid_plate() -> str:
         return "Biển số không đúng định dạng."
+
+    @staticmethod
+    def source_rejected_plate() -> str:
+        return (
+            "Website nguồn từ chối biển số này. Hãy kiểm tra mã màu "
+            "T/X/V hoặc dữ liệu phương tiện trên hệ thống đăng kiểm."
+        )
 
     @staticmethod
     def source_not_ready() -> str:

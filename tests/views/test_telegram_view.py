@@ -55,3 +55,10 @@ def test_admin_and_user_help_explain_distinct_permissions() -> None:
 def test_restricted_help_does_not_offer_login_as_available_command() -> None:
     assert "chưa được phép đăng nhập" in TelegramView.pending_help()
     assert "không thể /login" in TelegramView.blocked_help()
+
+
+def test_source_rejection_is_distinct_from_local_format_error() -> None:
+    assert TelegramView.invalid_plate() == "Biển số không đúng định dạng."
+    rejected = TelegramView.source_rejected_plate()
+    assert "Website nguồn từ chối" in rejected
+    assert "T/X/V" in rejected

@@ -66,20 +66,22 @@ nhất một lần để xuất hiện trong `/users`.
 
 ## Định dạng biển số
 
-Input có dạng `2 số + 1–2 chữ + 5 số`, có thể kèm đuôi `T` hoặc `V`:
+Input có dạng `2 số + 1–2 chữ + 5 số`, có thể kèm mã màu `T`, `X` hoặc `V`:
 
 ```text
 30A12345
 30A12345T
 30A12345V
+30A12345X
 37RM00562
 37RM00562T
 ```
 
-Với series một chữ và không có đuôi, bot thử lần lượt candidate `T` và `V`. Với
-series hai chữ như `RM`, bot gửi nguyên biển số, không tự nối `T/V`. Input sai
-định dạng bị từ chối tại ứng dụng và không gửi lên website nguồn. Kết quả gồm
-biển đã tra, loại phương tiện, thương hiệu/nhãn hiệu và thời hạn kiểm định.
+Với biển 5 số chưa có mã màu, bot thử lần lượt `T` (trắng), `X` (xanh), `V`
+(vàng). Series đặc biệt `KT` và `LD` được gửi nguyên bản theo hướng dẫn của Cục
+Đăng kiểm. Input sai định dạng bị từ chối tại ứng dụng và không gửi lên website
+nguồn. Kết quả gồm biển đã tra, loại phương tiện, thương hiệu/nhãn hiệu và thời
+hạn kiểm định.
 
 ## Yêu cầu
 

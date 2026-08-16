@@ -186,7 +186,7 @@ class SourcePool:
             if result.successes:
                 self.send_message(job.chat_id, self.view.format_results(result.successes))
             elif result.status is LookupStatus.INVALID:
-                self.send_message(job.chat_id, self.view.invalid_plate())
+                self.send_message(job.chat_id, self.view.source_rejected_plate())
             else:
                 self.send_message(job.chat_id, "Không tìm thấy dữ liệu phương tiện.")
 
@@ -545,7 +545,7 @@ class UserSourcePool:
             if result.successes:
                 self.send_message(job.chat_id, self.view.format_results(result.successes))
             elif result.status is LookupStatus.INVALID:
-                self.send_message(job.chat_id, self.view.invalid_plate())
+                self.send_message(job.chat_id, self.view.source_rejected_plate())
             else:
                 self.send_message(job.chat_id, "Không tìm thấy dữ liệu phương tiện.")
 

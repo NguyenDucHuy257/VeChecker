@@ -40,12 +40,20 @@ def controller(tmp_path, client):
 def test_candidate_generation() -> None:
     assert LookupController.create_candidates(" 00a00000 ") == (
         "00A00000T",
+        "00A00000X",
         "00A00000V",
     )
     assert LookupController.create_candidates("00a00000t") == ("00A00000T",)
     assert LookupController.create_candidates("00a00000V") == ("00A00000V",)
-    assert LookupController.create_candidates("37rm00562") == ("37RM00562",)
+    assert LookupController.create_candidates("37rm00562") == (
+        "37RM00562T",
+        "37RM00562X",
+        "37RM00562V",
+    )
     assert LookupController.create_candidates("37rm00562t") == ("37RM00562T",)
+    assert LookupController.create_candidates("37rm00562x") == ("37RM00562X",)
+    assert LookupController.create_candidates("29ld01234") == ("29LD01234",)
+    assert LookupController.create_candidates("29kt01234") == ("29KT01234",)
     with pytest.raises(InvalidPlateError):
         LookupController.create_candidates("   ")
 
@@ -56,7 +64,6 @@ def test_candidate_generation() -> None:
         "37ABCD12",
         "37A1234567",
         "37A12-345",
-        "37A12345X",
         "37ABC12345",
         "ABC",
     ],
@@ -66,17 +73,23 @@ def test_candidate_generation_rejects_unproven_formats(value) -> None:
         LookupController.create_candidates(value)
 
 
-def test_base_plate_runs_both_candidates_and_returns_success(tmp_path) -> None:
-    fake = FakeClient([VEHICLE_T, VehicleNotFoundError()])
+def test_base_plate_runs_all_color_candidates_and_returns_success(tmp_path) -> None:
+    fake = FakeClient(
+        [VEHICLE_T, VehicleNotFoundError(), VehicleNotFoundError()]
+    )
     lookup, repository = controller(tmp_path, fake)
 
     result = lookup.lookup("00a00000")
 
-    assert fake.plates == ["00A00000T", "00A00000V"]
+    assert fake.plates == ["00A00000T", "00A00000X", "00A00000V"]
     assert result.status is LookupStatus.SUCCESS
     assert [item.queried_plate for item in result.successes] == ["00A00000T"]
     rows = repository.list_all()
-    assert [row.status for row in rows] == [LookupStatus.SUCCESS, LookupStatus.NOT_FOUND]
+    assert [row.status for row in rows] == [
+        LookupStatus.SUCCESS,
+        LookupStatus.NOT_FOUND,
+        LookupStatus.NOT_FOUND,
+    ]
 
 
 def test_suffixed_plate_runs_once(tmp_path) -> None:
@@ -90,19 +103,19 @@ def test_suffixed_plate_runs_once(tmp_path) -> None:
     assert len(repository.list_all()) == 1
 
 
-def test_two_letter_plate_runs_once_without_adding_suffix(tmp_path) -> None:
-    fake = FakeClient([VEHICLE_T])
+def test_two_letter_plate_tries_all_color_suffixes(tmp_path) -> None:
+    fake = FakeClient([VehicleNotFoundError(), VEHICLE_T, VehicleNotFoundError()])
     lookup, repository = controller(tmp_path, fake)
 
     result = lookup.lookup("37rm00562")
 
-    assert fake.plates == ["37RM00562"]
+    assert fake.plates == ["37RM00562T", "37RM00562X", "37RM00562V"]
     assert len(result.successes) == 1
-    assert len(repository.list_all()) == 1
+    assert len(repository.list_all()) == 3
 
 
 def test_both_candidates_can_return_data(tmp_path) -> None:
-    fake = FakeClient([VEHICLE_T, VEHICLE_V])
+    fake = FakeClient([VEHICLE_T, VehicleNotFoundError(), VEHICLE_V])
     lookup, _ = controller(tmp_path, fake)
 
     result = lookup.lookup("00a00000")
@@ -114,7 +127,7 @@ def test_base_plate_waits_between_source_candidates(tmp_path) -> None:
     database = Database(tmp_path / "delay.sqlite3")
     database.initialize()
     delays: list[float] = []
-    fake = FakeClient([VEHICLE_T, VEHICLE_V])
+    fake = FakeClient([VEHICLE_T, VehicleNotFoundError(), VEHICLE_V])
     lookup = LookupController(
         fake,
         LookupRepository(database),
@@ -124,7 +137,7 @@ def test_base_plate_waits_between_source_candidates(tmp_path) -> None:
 
     lookup.lookup("00a00000")
 
-    assert delays == [2.0]
+    assert delays == [2.0, 2.0]
 
 
 def test_local_invalid_returns_invalid_without_calling_source(tmp_path) -> None:
@@ -142,13 +155,15 @@ def test_local_invalid_returns_invalid_without_calling_source(tmp_path) -> None:
 
 
 def test_source_can_still_reject_valid_shaped_candidates(tmp_path) -> None:
-    fake = FakeClient([InvalidPlateError(), InvalidPlateError()])
+    fake = FakeClient(
+        [InvalidPlateError(), InvalidPlateError(), InvalidPlateError()]
+    )
     lookup, _ = controller(tmp_path, fake)
 
     result = lookup.lookup("00A00000")
 
     assert result.status is LookupStatus.INVALID
-    assert fake.plates == ["00A00000T", "00A00000V"]
+    assert fake.plates == ["00A00000T", "00A00000X", "00A00000V"]
 
 
 def test_source_failure_is_recorded_and_raised(tmp_path) -> None:

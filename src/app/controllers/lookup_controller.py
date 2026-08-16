@@ -20,7 +20,7 @@ from app.services.webforms_client import WebFormsClient
 
 _PLATE_PATTERN = re.compile(
     r"^(?P<province>[0-9]{2})(?P<series>[A-Z]{1,2})"
-    r"(?P<number>[0-9]{5})(?P<suffix>[TV])?$"
+    r"(?P<number>[0-9]{5})(?P<suffix>[TXV])?$"
 )
 
 
@@ -86,13 +86,17 @@ class LookupController:
         match = _PLATE_PATTERN.fullmatch(normalized)
         if match is None:
             raise InvalidPlateError(
-                "Biển số phải có dạng 2 số, 1-2 chữ, 5 số và có thể kèm đuôi T/V."
+                "Biển số phải có dạng 2 số, 1-2 chữ, 5 số và có thể kèm đuôi T/X/V."
             )
         if match.group("suffix") is not None:
             return (normalized,)
-        if len(match.group("series")) == 2:
+        if match.group("series") in {"KT", "LD"}:
             return (normalized,)
-        return (f"{normalized}T", f"{normalized}V")
+        return (
+            f"{normalized}T",
+            f"{normalized}X",
+            f"{normalized}V",
+        )
 
     @staticmethod
     def is_valid_plate(value: str) -> bool:
