@@ -1,162 +1,332 @@
-# DKTLE — Phase 3
+# VeChecker / DKTLE
 
-Ứng dụng MVC dùng một tài khoản `app.vr.org.vn` do admin quản lý, giữ một
-WebForms session dùng chung và xử lý tra cứu Telegram tuần tự qua hàng đợi giới
-hạn trước khi lưu lịch sử kết quả vào SQLite.
+Bot Telegram tra cứu thông tin kiểm định phương tiện từ `app.vr.org.vn`. Bot dùng
+một tài khoản nguồn chung do admin đăng nhập, một WebForms session chung và một
+worker FIFO. Telegram user không cần biết tài khoản nguồn.
 
-## Cấu trúc MVC
+## Chức năng chính
 
-- `src/app/models`: `User`, `Lookup` và repository SQLite.
-- `src/app/views`: nhập CAPTCHA/biển số và hiển thị ba trường kết quả cho script.
-- `src/app/controllers`: điều phối đăng nhập, candidate `T/V`, tra cứu và ghi DB.
-- `src/app/services`: HTTP WebForms, parser HTML, CAPTCHA file và error codes.
+- Phân quyền Telegram: `ADMIN`, `USER`; trạng thái `PENDING`, `ACTIVE`, `BLOCKED`.
+- Admin phê duyệt, thu hồi hoặc khóa user ngay trên Telegram.
+- Chỉ admin nhập username/password nguồn bằng `/login`.
+- Credential được xóa khỏi chat ngay, chỉ giữ trong RAM và không ghi SQLite/log.
+- CAPTCHA được giải bằng model ONNX; nếu model lỗi, admin có thể nhập tay.
+- Session hết hạn tự nhiên được đăng nhập lại rồi retry đúng candidate một lần.
+- Một worker truy cập website tuần tự; queue mặc định tối đa 20 job.
+- SQLite lưu lịch sử kết quả và hỗ trợ backup, restore, recovery sau restart.
 
-Phase 2 bổ sung `telegram_controller`, `telegram_view`, Telegram long polling, hàng đợi nguồn và CAPTCHA ONNX có fallback nhập tay.
+## Luồng hoạt động
 
-## Cài đặt trên Windows
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.lock
-.\.venv\Scripts\python.exe -m pip install -e . --no-deps
-Copy-Item .env.example .env
+```text
+Admin /login -> nhập credential -> giải CAPTCHA -> session nguồn READY
+                                               |
+User ACTIVE -> gửi biển số -> queue 20 slot -> 1 worker FIFO -> website nguồn
+                                               |
+                              session hết hạn -> tự login lại -> retry candidate
 ```
 
-Điền các giá trị thật vào `.env`:
+Khi admin gửi `/logout`, bot chặn yêu cầu mới, chờ job đang chạy hoàn tất, không
+cho các job còn chờ gọi website, đóng session và xóa credential khỏi RAM. Sau
+restart hoặc logout, admin phải `/login` lại.
 
-- `VR_USERNAME`, `VR_PASSWORD`: tùy chọn cho script Phase 1. Telegram bot có thể
-  khởi động khi để trống; admin nhập account nguồn dùng chung bằng `/login`.
-- `TELEGRAM_ADMIN_IDS`: một hoặc nhiều numeric ID, cách nhau bằng dấu phẩy.
-- `TELEGRAM_BOT_TOKEN`: token lấy từ BotFather; không ghi vào log hoặc Git.
-- `CANDIDATE_DELAY_SECONDS=2`: khoảng nghỉ tối thiểu giữa hai candidate `T/V`.
-- `STABILITY_INPUT_FILE` và `STABILITY_DELAY_SECONDS`: file đầu vào và khoảng nghỉ của stability test.
+## Lệnh Telegram
 
-Không đưa `.env`, DB, ảnh CAPTCHA, file biển số thật hoặc HAR vào Git.
+### User ACTIVE
 
-## Chạy Telegram bot
+| Lệnh | Mục đích |
+|---|---|
+| `/start` | Xem trạng thái phê duyệt |
+| `/help` | Xem hướng dẫn theo quyền hiện tại |
+| `/status` | Xem session chung và mức sử dụng queue |
+| `/tracuu <biển_số>` | Gửi yêu cầu tra cứu |
+| `/traacuu <biển_số>` | Bí danh của `/tracuu` |
+| `<biển_số>` | Gửi trực tiếp, không cần lệnh |
 
-Model chính thức hiện chạy `CAPTCHA_MODE=auto` với threshold `0.60`. Khi confidence
-thấp hoặc website báo sai CAPTCHA, bot lấy challenge mới và giải tiếp; lỗi model
-mới fallback nhập tay. Chi tiết accuracy và giới hạn đánh giá nằm trong
-[MODEL_INFO.md](models/captcha/MODEL_INFO.md). Chạy bot bằng:
+User `PENDING` hoặc `BLOCKED` không được tra cứu. User không sử dụng được
+`/login`, `/logout`, `/captcha` hoặc lệnh quản trị.
 
-```powershell
-.\.venv\Scripts\python.exe scripts\telegram_bot.py
+### Admin
+
+Admin có toàn bộ lệnh của user và các lệnh sau:
+
+| Lệnh | Mục đích |
+|---|---|
+| `/login` | Nhập username/password và mở session nguồn chung |
+| `/cancel` | Hủy bước nhập credential |
+| `/logout` | Đóng session chung sau khi job hiện tại hoàn tất |
+| `/captcha <mã>` | Nhập CAPTCHA tay khi model fallback |
+| `/refresh_captcha` | Lấy ảnh CAPTCHA khác |
+| `/users` | Liệt kê Telegram ID, role và trạng thái |
+| `/approve <telegram_id>` | Chuyển user sang `ACTIVE` |
+| `/revoke <telegram_id>` | Chuyển user về `PENDING` |
+| `/block <telegram_id>` | Chuyển user sang `BLOCKED` |
+
+Không thể revoke hoặc block admin `ACTIVE` cuối cùng. User phải gửi `/start` ít
+nhất một lần để xuất hiện trong `/users`.
+
+## Định dạng biển số
+
+Input có dạng `2 số + 1 chữ + 5 số`, có thể kèm đuôi `T` hoặc `V`:
+
+```text
+30A12345
+30A12345T
+30A12345V
 ```
 
-User mới gửi `/start`, sau đó admin dùng `/approve <telegram_id>`. Admin dùng
-`/login`, nhập username/password để khởi tạo session chung; bot xóa ngay hai tin
-credential và chỉ giữ chúng trong RAM. User ACTIVE chỉ tra cứu bằng
-`/tracuu <biển_số>`, `/traacuu <biển_số>` hoặc gửi trực tiếp biển số. Khi session
-hết hạn, bot tự đăng nhập lại rồi retry đúng candidate một lần.
+Nếu không có đuôi, bot thử lần lượt candidate `T` và `V`. Input sai định dạng bị
+từ chối tại ứng dụng và không gửi lên website nguồn. Kết quả gồm biển đã tra,
+loại phương tiện, thương hiệu/nhãn hiệu và thời hạn kiểm định.
 
-Lệnh user: `/help`, `/status`, `/tracuu`, `/traacuu`. Lệnh admin bổ sung `/login`,
-`/logout`, `/captcha`, `/refresh_captcha`, `/approve`, `/revoke`, `/block`,
-`/users`. Nội dung `/help` tự thay đổi theo role và trạng thái.
+## Yêu cầu
 
-Bot luôn tạo đúng một source worker để không có request WebForms chạy đồng thời.
-`JOB_QUEUE_SIZE=20` giới hạn tổng số job đã nhận; các job được xử lý FIFO. Admin
-`/logout` chờ job đang chạy hoàn tất, chặn job mới và không cho job còn chờ gọi nguồn.
+- Ubuntu 24.04 hoặc Linux tương đương.
+- Python 3.11 trở lên; production hiện dùng Python 3.12.
+- Git và `python3-venv`.
+- Telegram bot token từ BotFather.
+- Telegram numeric ID của ít nhất một admin.
+- Account nguồn hợp lệ; chỉ nhập sau khi admin dùng `/login`.
 
-Đánh giá model trên manifest TSV riêng tư (`đường_dẫn_ảnh<TAB>nhãn`), tối thiểu 50 mẫu:
+## Cài đặt
 
-```powershell
-.\.venv\Scripts\python.exe scripts\evaluate_captcha_model.py D:\duong-dan-rieng\labels.tsv
+```bash
+cd /opt
+git clone --branch main https://github.com/NguyenDucHuy257/VeChecker.git
+cd VeChecker
+python3 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip
+.venv/bin/python -m pip install -r requirements.lock
+.venv/bin/python -m pip install -e . --no-deps
 ```
 
-Script chỉ in số tổng hợp exact-match, không in ảnh, nhãn hoặc dự đoán.
+Tạo user và thư mục runtime:
 
-Quy trình tạo model MobileNetV3-Small, fine-tune dataset và export ONNX được mô tả tại [CAPTCHA_FINETUNE.md](docs/CAPTCHA_FINETUNE.md).
-
-## Script test Phase 1
-
-Trước khi dùng `Tee-Object` trên Windows PowerShell, đặt encoding UTF-8 cho
-terminal hiện tại:
-
-```powershell
-chcp 65001 > $null
-$OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+```bash
+id dktle >/dev/null 2>&1 || useradd --system --shell /usr/sbin/nologin dktle
+mkdir -p /var/lib/dktle/captcha /var/lib/dktle/backups
+chown -R dktle:dktle /var/lib/dktle
+chmod -R 750 /var/lib/dktle
 ```
 
-Kiểm tra riêng đăng nhập CAPTCHA tay:
+## Cấu hình
 
-```powershell
-.\.venv\Scripts\python.exe scripts\manual_login.py
+Tạo `/etc/dktle.env`:
+
+```env
+TELEGRAM_ADMIN_IDS=123456789
+TELEGRAM_BOT_TOKEN=TOKEN_MOI_TU_BOTFATHER
+
+VR_BASE_URL=https://app.vr.org.vn/ptpublicweb/
+DATABASE_PATH=/var/lib/dktle/dktle.sqlite3
+CAPTCHA_DIR=/var/lib/dktle/captcha
+
+REQUEST_TIMEOUT_SECONDS=15
+SOURCE_REQUEST_ATTEMPTS=3
+SOURCE_RETRY_DELAY_SECONDS=1
+MAX_CAPTCHA_ATTEMPTS=3
+CANDIDATE_DELAY_SECONDS=2
+VERIFY_SSL=true
+LOG_LEVEL=INFO
+
+JOB_QUEUE_SIZE=20
+TELEGRAM_POLL_TIMEOUT_SECONDS=25
+USER_RATE_LIMIT_SECONDS=2
+SOURCE_SERIALIZE_REQUESTS=true
+
+CAPTCHA_MODE=auto
+CAPTCHA_MODEL_PATH=/opt/VeChecker/models/captcha/model.onnx
+CAPTCHA_CONFIDENCE_THRESHOLD=0.60
 ```
 
-Đăng nhập rồi tra cứu một input:
+`VR_USERNAME` và `VR_PASSWORD` không bắt buộc với Telegram bot. Bot vẫn khởi
+động khi chưa có session; user tra cứu lúc đó được hướng dẫn báo admin `/login`.
 
-```powershell
-.\.venv\Scripts\python.exe scripts\lookup_once.py
+```bash
+chown root:root /etc/dktle.env
+chmod 600 /etc/dktle.env
 ```
 
-Chạy tuần tự 10–20 input:
+Không commit file cấu hình thật, token, credential, database, cookie, CAPTCHA,
+HAR hoặc danh sách biển số thật vào Git.
 
-```powershell
-Copy-Item tests\live_plates.example.txt tests\live_plates.txt
-# Thay nội dung live_plates.txt bằng dữ liệu được phép sử dụng.
-.\.venv\Scripts\python.exe scripts\stability_test.py
+## Chạy thử trực tiếp
+
+```bash
+cd /opt/VeChecker
+set -a
+. /etc/dktle.env
+set +a
+.venv/bin/python scripts/telegram_bot.py
 ```
 
-Input chưa có đuôi sẽ được thử lần lượt với `T` và `V`. Input đã có đuôi `T/V` chỉ được tra cứu một lần.
+Dừng bằng `Ctrl+C`.
 
-Định dạng đã được HAR và UAT xác nhận là `2 số + 1 chữ + 5 số`, có thể kèm đuôi `T/V`. Input khác dạng được ghi `INVALID` ngay tại ứng dụng và không gửi lên website nguồn.
+## Chạy bằng systemd
 
-Làm sạch response HTML từ HAR để kiểm tra chẩn đoán:
+Tạo `/etc/systemd/system/dktle.service`:
 
-```powershell
-.\.venv\Scripts\python.exe scripts\sanitize_har.py
+```ini
+[Unit]
+Description=DKTLE Telegram Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dktle
+Group=dktle
+WorkingDirectory=/opt/VeChecker
+EnvironmentFile=/etc/dktle.env
+ExecStart=/opt/VeChecker/.venv/bin/python /opt/VeChecker/scripts/telegram_bot.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/dktle
+
+[Install]
+WantedBy=multi-user.target
 ```
 
-Output nằm trong `runtime/sanitized_har` và đã được Git ignore. Script không xuất request body và thay dữ liệu động bằng giá trị tổng hợp.
+Nạp và khởi động:
 
-## Test tự động
-
-```powershell
-.\.venv\Scripts\python.exe -m pytest -q
+```bash
+systemctl daemon-reload
+systemctl enable --now dktle
+sleep 5
+systemctl status dktle --no-pager
+journalctl -u dktle --since "1 minute ago" --no-pager
 ```
 
-Baseline kỹ thuật Phase 3 ngày 16/08/2026: `194 passed`. `compileall` và
-`pip check` đều pass.
+Sau khi bot chạy, admin gửi `/login`, nhập username/password nguồn và kiểm tra:
 
-Phase 3 bổ sung retry timeout/network/HTTP 5xx theo cấu hình, recovery job sau
-restart, constraint trạng thái tại SQLite, giới hạn input và backup/restore có
-integrity check. Runbook vận hành nằm tại [OPERATIONS.md](docs/OPERATIONS.md).
-
-Backup DB:
-
-```powershell
-.\.venv\Scripts\python.exe scripts\database_backup.py backup
+```text
+/status
+source_ready=True | shared_sessions=1 | queue=0/20
 ```
 
-Restore DB (phải dừng bot trước):
+## Cập nhật production
 
-```powershell
-.\.venv\Scripts\python.exe scripts\database_backup.py restore D:\backup\dktle.sqlite3
+```bash
+cd /opt/VeChecker
+systemctl stop dktle
+git pull --ff-only origin main
+.venv/bin/python -m pip install -r requirements.lock
+.venv/bin/python -m pip install -e . --no-deps
+systemctl start dktle
+sleep 5
+systemctl status dktle --no-pager
+journalctl -u dktle --since "1 minute ago" --no-pager
 ```
 
-Fixture trong `tests/fixtures/sanitized` là dữ liệu tổng hợp, không chứa credential hoặc dữ liệu phương tiện từ HAR.
+Restart làm mất session và credential trong RAM; admin cần `/login` lại.
 
-## Dữ liệu và lỗi
+## Đổi admin
 
-SQLite mặc định: `runtime/dktle.sqlite3`.
+Sửa `TELEGRAM_ADMIN_IDS` trong `/etc/dktle.env`. Có thể đặt nhiều ID, phân tách
+bằng dấu phẩy. Khi restart, ID trong cấu hình được thêm hoặc nâng thành admin;
+admin cũ không tự bị hạ quyền trong SQLite.
 
-Các trạng thái lookup:
+Để thay hẳn admin, dừng bot, backup DB, thêm admin mới và hạ admin cũ bằng
+`sqlite3`. Luôn thay hai placeholder bằng numeric ID thật:
 
-- `SUCCESS`
-- `INVALID`
-- `NOT_FOUND`
-- `ERROR`
+```bash
+systemctl stop dktle
+cp -a /var/lib/dktle/dktle.sqlite3 /var/lib/dktle/backups/dktle-before-admin-change.sqlite3
 
-`SUCCESS` chỉ được ghi khi đủ loại phương tiện, nhãn hiệu và hạn kiểm định. Response thiếu selector hoặc ngày hợp lệ được ghi nhận là lỗi parser, không trả dữ liệu một phần.
+sqlite3 /var/lib/dktle/dktle.sqlite3 "
+BEGIN;
+INSERT INTO users (telegram_user_id, role, status)
+VALUES (ID_ADMIN_MOI, 'ADMIN', 'ACTIVE')
+ON CONFLICT(telegram_user_id) DO UPDATE SET role='ADMIN', status='ACTIVE';
+UPDATE users SET role='USER', status='ACTIVE'
+WHERE telegram_user_id=ID_ADMIN_CU AND telegram_user_id<>ID_ADMIN_MOI;
+COMMIT;
+"
 
-Lookup gặp HTTP `500`, `502`, `503` hoặc `504` sẽ thử lại tối đa ba lượt. Mỗi lượt luôn GET form WebForms mới trước khi POST lại candidate; không tái sử dụng hidden state cũ.
+chown dktle:dktle /var/lib/dktle/dktle.sqlite3
+systemctl start dktle
+```
 
-Nếu URL ảnh CAPTCHA trả `404`, client thử tải lại và controller yêu cầu website sinh ảnh mới tối đa ba lần. Lỗi ảnh không làm mất lượt nhập CAPTCHA của người vận hành.
+## Vận hành và xử lý lỗi
 
-## Nghiệm thu
+```bash
+systemctl is-active dktle
+systemctl show dktle -p NRestarts --value
+journalctl -u dktle -n 100 --no-pager
+```
 
-Phase 1 và Phase 2 đã hoàn tất triển khai. Thực hiện P3-UAT-01 đến P3-UAT-10
-trong [docs/PHASE_3.md](docs/PHASE_3.md) trước khi ký nghiệm thu Phase 3.
+- `source_ready=False`: admin chưa login, đã logout hoặc đăng nhập lại thất bại.
+- `queue=20/20`: queue đầy; user cần gửi lại sau.
+- `SESSION_EXPIRED`: tự login lại vẫn không giữ được session; admin thử `/login`.
+- `AUTH_FAILED`: username/password nguồn không đúng.
+- `PARSE_ERROR`: website nguồn đã đổi cấu trúc HTML.
+- `SOURCE_TIMEOUT`, `SOURCE_NETWORK_ERROR`, `SOURCE_HTTP_ERROR`: nguồn hoặc mạng
+  tạm thời không ổn định.
 
-HAR gốc đã được bỏ khỏi Git index và vẫn được giữ trên máy để đối chiếu. Tuy nhiên, file từng nằm trong lịch sử commit cũ; phải đổi mật khẩu tài khoản nguồn và làm sạch lịch sử Git trước khi phát hành hoặc chia sẻ repository đó.
+Runbook chi tiết: [docs/OPERATIONS.md](docs/OPERATIONS.md).
+
+## Backup và restore
+
+Backup online:
+
+```bash
+cd /opt/VeChecker
+set -a; . /etc/dktle.env; set +a
+.venv/bin/python scripts/database_backup.py backup --output /var/lib/dktle/backups/dktle.sqlite3
+```
+
+Restore phải thực hiện khi bot đã dừng:
+
+```bash
+systemctl stop dktle
+cd /opt/VeChecker
+set -a; . /etc/dktle.env; set +a
+.venv/bin/python scripts/database_backup.py restore /var/lib/dktle/backups/dktle.sqlite3
+chown dktle:dktle /var/lib/dktle/dktle.sqlite3
+systemctl start dktle
+```
+
+## Kiểm thử
+
+```bash
+cd /opt/VeChecker
+.venv/bin/python -m pytest -q
+.venv/bin/python -m compileall -q src scripts tests
+.venv/bin/python -m pip check
+```
+
+Baseline hiện tại: `194 passed`.
+
+Đánh giá model CAPTCHA bằng manifest TSV riêng tư:
+
+```bash
+.venv/bin/python scripts/evaluate_captcha_model.py /duong/dan/labels.tsv
+```
+
+Quy trình fine-tune và export: [docs/CAPTCHA_FINETUNE.md](docs/CAPTCHA_FINETUNE.md).
+Thông tin model production: [models/captcha/MODEL_INFO.md](models/captcha/MODEL_INFO.md).
+
+## Cấu trúc dự án
+
+```text
+src/app/                 code ứng dụng MVC và service
+scripts/telegram_bot.py  entrypoint production
+scripts/                 công cụ backup, đánh giá và huấn luyện CAPTCHA
+models/captcha/          model ONNX production và metadata
+tests/                   test với fixture đã làm sạch
+docs/OPERATIONS.md       runbook vận hành
+docs/CAPTCHA_FINETUNE.md hướng dẫn model CAPTCHA
+```
+
+## Bảo mật
+
+- Token và credential từng bị gửi qua kênh không an toàn phải được thu hồi/đổi.
+- Chỉ chat private được bot xử lý.
+- Bot cố xóa ngay tin nhắn username/password của admin; admin vẫn nên tự kiểm tra
+  và xóa nếu Telegram API báo lỗi.
+- Credential/session chỉ ở RAM và mất khi logout, shutdown hoặc restart.
+- SQLite không lưu username/password nguồn, CAPTCHA hoặc cookie.
+- Fixture trong `tests/fixtures/sanitized` là dữ liệu tổng hợp đã làm sạch.
