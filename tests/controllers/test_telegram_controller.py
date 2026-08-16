@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+import pytest
+
 from app.controllers.lookup_controller import LookupController
 from app.controllers.telegram_controller import TelegramController, UserRateLimiter
 from app.database import Database
@@ -150,23 +152,32 @@ def test_two_letter_plate_is_normalized_and_enqueued(tmp_path) -> None:
     assert workers.jobs[0].input_plate == "37RM00562"
 
 
-def test_rm_regression_flows_from_telegram_to_lowercase_source_candidates(
-    tmp_path,
+@pytest.mark.parametrize(
+    ("input_plate", "normalized", "source_base"),
+    [
+        ("37rm00628", "37RM00628", "37rm00628"),
+        ("29RM12345", "29RM12345", "29rm12345"),
+        ("51-Rm 00.001", "51RM00001", "51rm00001"),
+        ("88r\u200bm99999", "88RM99999", "88rm99999"),
+    ],
+)
+def test_rm_format_flows_from_telegram_to_lowercase_source_candidates(
+    tmp_path, input_plate, normalized, source_base
 ) -> None:
     controller, users, workers, _, bot = make_controller(tmp_path)
     users.get_or_create_pending(2)
     users.update_status(2, UserStatus.ACTIVE)
 
-    controller.handle_update(telegram_update(1, 2, "/tracuu 37rm00628"))
+    controller.handle_update(telegram_update(1, 2, f"/tracuu {input_plate}"))
 
     assert bot.messages[-1][1] == TelegramView.queued()
     assert len(workers.jobs) == 1
     queued_plate = workers.jobs[0].input_plate
-    assert queued_plate == "37RM00628"
+    assert queued_plate == normalized
     assert LookupController.create_candidates(queued_plate) == (
-        "37rm00628",
-        "37rm00628t",
-        "37rm00628v",
+        source_base,
+        f"{source_base}t",
+        f"{source_base}v",
     )
 
 
