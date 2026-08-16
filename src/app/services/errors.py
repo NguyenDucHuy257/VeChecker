@@ -18,6 +18,8 @@ class ErrorCode(StrEnum):
     SOURCE_NETWORK_ERROR = "SOURCE_NETWORK_ERROR"
     SOURCE_HTTP_ERROR = "SOURCE_HTTP_ERROR"
     SOURCE_ERROR = "SOURCE_ERROR"
+    TELEGRAM_API_ERROR = "TELEGRAM_API_ERROR"
+    SOURCE_NOT_READY = "SOURCE_NOT_READY"
 
 
 class VrServiceError(RuntimeError):
@@ -80,3 +82,12 @@ class CaptchaImageUnavailableError(SourceHttpError):
     """The source returned a CAPTCHA path whose image is not available yet."""
 
     retryable = True
+
+
+class TelegramApiError(VrServiceError):
+    code = ErrorCode.TELEGRAM_API_ERROR
+    retryable = True
+
+
+class SourceNotReadyError(VrServiceError):
+    code = ErrorCode.SOURCE_NOT_READY

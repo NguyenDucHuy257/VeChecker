@@ -35,7 +35,7 @@ Rà soát toàn bộ hệ thống đã Pass Phase 1 và Phase 2, sửa lỗi cò
 
 - WebForms state không dùng lại sai request hoặc sai worker.
 - Session hết hạn chuyển đúng về login flow.
-- CAPTCHA auto/manual fallback không lặp vô hạn.
+- CAPTCHA auto giải từng challenge mới cho đến khi login; lỗi model fallback manual.
 - Parser fail-closed khi website đổi cấu trúc.
 
 ## 4. Ma trận lỗi bắt buộc
@@ -45,7 +45,7 @@ Rà soát toàn bộ hệ thống đã Pass Phase 1 và Phase 2, sửa lỗi cò
 | Connect/read timeout | Retry tối đa theo cấu hình, sau đó trả `SOURCE_TIMEOUT` |
 | HTTP 5xx | Retry có delay giới hạn; không retry vô hạn |
 | HTTP 200 nhưng quay về login | Đánh dấu hết phiên, tạm dừng job và yêu cầu login |
-| CAPTCHA auto sai | Một lần thử tự động, sau đó fallback admin |
+| CAPTCHA auto sai | Lấy challenge mới và tiếp tục giải đến khi login |
 | CAPTCHA admin sai ba lần | Dừng login flow và báo admin chủ động chạy lại |
 | Biển số sai định dạng | Trả `INVALID`, không retry |
 | Không candidate có dữ liệu | Trả `NOT_FOUND` |
@@ -97,7 +97,7 @@ python scripts/stability_test.py --input <FILE_TEST> --delay 2
 | P3-UAT-03 | Ngắt mạng tạm thời rồi bật lại | Bot báo lỗi đúng và phục hồi ở yêu cầu sau |
 | P3-UAT-04 | Restart ứng dụng khi đang có job | Không còn job kẹt `RUNNING`, quyền user còn nguyên |
 | P3-UAT-05 | Gửi yêu cầu vượt queue/rate limit | Bot báo bận/giới hạn, worker không treo |
-| P3-UAT-06 | Làm phiên hết hạn và kiểm tra CAPTCHA mode đã chọn | Login lại đúng luồng, không retry vô hạn |
+| P3-UAT-06 | Làm phiên hết hạn và kiểm tra CAPTCHA mode đã chọn | Login lại đúng luồng auto; mỗi challenge chỉ inference một lần |
 | P3-UAT-07 | Kiểm tra input có/không có đuôi `T/V` | Số lần gọi và kết quả đúng quy tắc candidate |
 | P3-UAT-08 | Kiểm tra `.env`, DB, log, fixture và Git | Không có credential, token, CAPTCHA, cookie hoặc HAR gốc bị commit |
 | P3-UAT-09 | Cài và chạy theo README trên môi trường sạch | Khởi động, migrate, seed admin và tra cứu thành công |
@@ -113,6 +113,22 @@ python scripts/stability_test.py --input <FILE_TEST> --delay 2
 - Biên bản nghiệm thu ba phase.
 
 Không bàn giao nếu còn lỗi làm sai kết quả, lộ bí mật, sai quyền user hoặc trộn dữ liệu giữa các request.
+
+## 9. Trạng thái triển khai kỹ thuật 16/08/2026
+
+- Retry timeout/network/HTTP 5xx đã cấu hình hóa và dùng form WebForms mới mỗi lượt.
+- Startup recovery đã kết thúc an toàn lookup/update dở dang.
+- Migration v3 thêm constraint trạng thái ở tầng SQLite.
+- Input Telegram giới hạn 128 ký tự; queue và per-user rate limit giữ nguyên.
+- CAPTCHA tạm Phase 1 được dọn cả startup, sau nhập và shutdown; Telegram dùng bytes.
+- Backup/restore SQLite cùng integrity check nằm ở `scripts/database_backup.py`.
+- Runbook/error code nằm trong `docs/OPERATIONS.md`.
+- Xác minh cuối: **182 passed**, `compileall` pass, `pip check` không có dependency lỗi.
+- DB vận hành đã backup, migrate schema v3 và đạt `PRAGMA integrity_check=ok`;
+  không có lookup/update dở dang cần recovery tại thời điểm migrate.
+
+Các UAT có website/Telegram thật vẫn cần chủ dự án thực hiện; test tự động không
+thay thế đối chiếu live P3-UAT-01..10.
 
 ```text
 PHASE 3: PASS / FAIL

@@ -12,6 +12,7 @@ from app.services.errors import (
     InvalidPlateError,
     SessionExpiredError,
     SourceHttpError,
+    SourceNetworkError,
     SourceParseError,
     SourceTimeoutError,
     VehicleNotFoundError,
@@ -321,6 +322,55 @@ def test_lookup_500_retries_with_a_fresh_get_and_state(
     assert delays == [1.0]
 
 
+@pytest.mark.parametrize(
+    "failure",
+    [requests.ConnectTimeout("connect"), requests.ReadTimeout("read")],
+)
+def test_lookup_timeout_retries_with_fresh_request(
+    monkeypatch: pytest.MonkeyPatch, failure: requests.RequestException
+) -> None:
+    delays: list[float] = []
+    monkeypatch.setattr("app.services.webforms_client.sleep", delays.append)
+    session = FakeSession(
+        [
+            failure,
+            FakeResponse(fixture("lookup_form.html")),
+            FakeResponse(fixture("lookup_success_single.html")),
+        ]
+    )
+    client = make_client(session)
+    client.authenticated = True
+
+    result = client.lookup_candidate("00A00000T")
+
+    assert result.brand == "NHÃN HIỆU MẪU"
+    assert [call[0] for call in session.calls] == ["GET", "GET", "POST"]
+    assert delays == [1.0]
+
+
+def test_lookup_persistent_network_error_uses_configured_attempts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    delays: list[float] = []
+    monkeypatch.setattr("app.services.webforms_client.sleep", delays.append)
+    session = FakeSession([requests.ConnectionError("offline") for _ in range(2)])
+    client = WebFormsClient(
+        base_url="https://source.test/ptpublicweb/",
+        username="synthetic-user",
+        password="synthetic-password",
+        request_attempts=2,
+        retry_delay_seconds=0.25,
+        session=session,
+    )
+    client.authenticated = True
+
+    with pytest.raises(SourceNetworkError, match="Đã thử 2 lần"):
+        client.lookup_candidate("00A00000T")
+
+    assert len(session.calls) == 2
+    assert delays == [0.25]
+
+
 def test_lookup_persistent_500_stops_after_three_attempts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -410,6 +460,30 @@ def test_lookup_detects_session_expiry() -> None:
     with pytest.raises(SessionExpiredError):
         client.lookup_candidate("00A00000T")
     assert client.authenticated is False
+
+
+def test_lookup_detects_session_expiry_after_post() -> None:
+    session = FakeSession(
+        [FakeResponse(fixture("lookup_form.html")), FakeResponse(fixture("login_form.html"))]
+    )
+    client = make_client(session)
+    client.authenticated = True
+
+    with pytest.raises(SessionExpiredError):
+        client.lookup_candidate("00A00000T")
+
+    assert client.authenticated is False
+
+
+def test_empty_lookup_response_fails_closed_without_retry() -> None:
+    session = FakeSession([FakeResponse(b"")])
+    client = make_client(session)
+    client.authenticated = True
+
+    with pytest.raises(SourceParseError):
+        client.lookup_candidate("00A00000T")
+
+    assert len(session.calls) == 1
 
 
 def test_lookup_302_to_login_marks_session_expired() -> None:

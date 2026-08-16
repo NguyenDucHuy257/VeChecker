@@ -70,10 +70,66 @@ class UserRepository:
             ).fetchone()
         return User.from_row(row) if row is not None else None
 
+    def get_or_create_pending(
+        self,
+        telegram_user_id: int,
+        *,
+        telegram_username: str | None = None,
+    ) -> tuple[User, bool]:
+        _validate_telegram_user_id(telegram_user_id)
+        username = telegram_username.strip() if telegram_username else None
+        with self._database.transaction() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO users (telegram_user_id, telegram_username, role, status)
+                VALUES (?, ?, 'USER', 'PENDING')
+                ON CONFLICT(telegram_user_id) DO UPDATE SET
+                    telegram_username = COALESCE(excluded.telegram_username, users.telegram_username),
+                    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                """,
+                (telegram_user_id, username),
+            )
+            created = cursor.rowcount == 1 and int(cursor.lastrowid or 0) > 0
+            row = connection.execute(
+                "SELECT * FROM users WHERE telegram_user_id = ?",
+                (telegram_user_id,),
+            ).fetchone()
+        assert row is not None
+        return User.from_row(row), created
+
     def list_all(self) -> list[User]:
         with closing(self._database.connect()) as connection:
             rows = connection.execute("SELECT * FROM users ORDER BY id").fetchall()
         return [User.from_row(row) for row in rows]
+
+    def count_active_admins(self) -> int:
+        with closing(self._database.connect()) as connection:
+            row = connection.execute(
+                "SELECT COUNT(*) FROM users WHERE role = 'ADMIN' AND status = 'ACTIVE'"
+            ).fetchone()
+        return int(row[0])
+
+    def update_status(self, telegram_user_id: int, status: UserStatus) -> User:
+        _validate_telegram_user_id(telegram_user_id)
+        status = UserStatus(status)
+        with self._database.transaction() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE users SET
+                    status = ?,
+                    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                WHERE telegram_user_id = ?
+                """,
+                (status.value, telegram_user_id),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("Telegram user does not exist")
+            row = connection.execute(
+                "SELECT * FROM users WHERE telegram_user_id = ?",
+                (telegram_user_id,),
+            ).fetchone()
+        assert row is not None
+        return User.from_row(row)
 
     def create(
         self,

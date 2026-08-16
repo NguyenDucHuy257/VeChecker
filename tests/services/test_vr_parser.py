@@ -145,6 +145,21 @@ def test_parse_multiple_rows_selects_latest_expiry() -> None:
     assert result.inspection_expiry == date(2031, 12, 14)
 
 
+def test_inspection_expiry_column_can_change_order() -> None:
+    document = """
+        <span id="txtLoaiPT">Phương tiện mẫu</span>
+        <span id="txtNhanHieu">Nhãn hiệu mẫu</span>
+        <table id="DGKiemDinh">
+          <tr><th>Thời hạn KĐ</th><th>Đơn vị</th><th>Số tem</th></tr>
+          <tr><td>09/08/2034</td><td>Đơn vị A</td><td>ABC</td></tr>
+        </table>
+    """
+
+    result = parse_vehicle_result(document)
+
+    assert result.inspection_expiry == date(2034, 8, 9)
+
+
 def test_mojibake_is_repaired_in_values_and_table_header() -> None:
     result = parse_vehicle_result(fixture_bytes("lookup_mojibake.html"))
 

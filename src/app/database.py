@@ -62,4 +62,61 @@ class Database:
         """Apply migrations and idempotently bootstrap configured admins."""
 
         self.migrate()
+        self.recover_incomplete_work()
         return UserRepository(self).seed_admins(list(telegram_admin_ids))
+
+    def recover_incomplete_work(self) -> tuple[int, int]:
+        """Fail work that cannot safely resume after a process restart."""
+
+        with self.transaction() as connection:
+            lookups = connection.execute(
+                """
+                UPDATE lookups SET
+                    status = 'ERROR', error_code = 'SOURCE_ERROR',
+                    finished_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                WHERE status IN ('QUEUED', 'RUNNING')
+                """
+            ).rowcount
+            updates = connection.execute(
+                """
+                UPDATE telegram_updates SET
+                    state = 'FAILED', error_code = 'SOURCE_ERROR',
+                    finished_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                WHERE state = 'ACCEPTED'
+                """
+            ).rowcount
+        return int(lookups), int(updates)
+
+    def backup(self, destination: str | Path) -> Path:
+        """Create a consistent online SQLite backup and verify its integrity."""
+
+        target = Path(destination)
+        self._validate_copy_paths(self.path, target)
+        if not self.path.is_file():
+            raise FileNotFoundError(f"Database does not exist: {self.path}")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with closing(self.connect()) as source, closing(sqlite3.connect(target)) as output:
+            source.backup(output)
+            if output.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                raise RuntimeError("Backup SQLite failed integrity_check")
+        return target.resolve()
+
+    def restore(self, source: str | Path) -> Path:
+        """Restore this database from a verified SQLite backup."""
+
+        backup_path = Path(source)
+        self._validate_copy_paths(backup_path, self.path)
+        if not backup_path.is_file():
+            raise FileNotFoundError(f"Backup does not exist: {backup_path}")
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with closing(sqlite3.connect(backup_path)) as backup_connection:
+            if backup_connection.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                raise RuntimeError("Backup SQLite failed integrity_check")
+            with closing(self.connect()) as destination:
+                backup_connection.backup(destination)
+        return self.path.resolve()
+
+    @staticmethod
+    def _validate_copy_paths(source: Path, destination: Path) -> None:
+        if source.expanduser().resolve() == destination.expanduser().resolve():
+            raise ValueError("SQLite source and destination must be different files")

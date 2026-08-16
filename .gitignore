@@ -18,6 +18,10 @@ runtime/
 
 *.har
 tests/live_plates.txt
+models/captcha/dataset/
+models/captcha/*labels*.tsv
+models/captcha/model_[0-9]*.*
+models/captcha/model_before_*.*
 
 build/
 dist/

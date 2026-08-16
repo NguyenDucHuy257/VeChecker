@@ -23,6 +23,7 @@ class ConfigError(ValueError):
 class AppConfig:
     vr_username: str = field(repr=False)
     vr_password: str = field(repr=False)
+    telegram_bot_token: str = field(repr=False)
     telegram_admin_ids: tuple[int, ...]
     database_path: Path
     captcha_dir: Path
@@ -31,15 +32,33 @@ class AppConfig:
     candidate_delay_seconds: float
     vr_base_url: str = "https://app.vr.org.vn/ptpublicweb/"
     request_timeout_seconds: float = 15.0
+    source_request_attempts: int = 3
+    source_retry_delay_seconds: float = 1.0
     max_captcha_attempts: int = 3
     verify_ssl: bool = True
     log_level: str = "INFO"
+    max_workers: int = 2
+    job_queue_size: int = 20
+    telegram_poll_timeout_seconds: int = 25
+    user_rate_limit_seconds: float = 2.0
+    source_serialize_requests: bool = True
+    captcha_mode: str = "manual"
+    captcha_model_path: Path = Path("models/captcha/model.onnx")
+    captcha_confidence_threshold: float = 0.9
 
     @property
     def log_secrets(self) -> tuple[str, ...]:
         """Secrets that logging formatters must redact."""
 
-        return tuple(value for value in (self.vr_username, self.vr_password) if value)
+        return tuple(
+            value
+            for value in (
+                self.vr_username,
+                self.vr_password,
+                self.telegram_bot_token,
+            )
+            if value
+        )
 
 
 def _read_env_file(path: Path) -> dict[str, str]:
@@ -130,6 +149,13 @@ def _parse_positive_int(raw: str, key: str) -> int:
     return value
 
 
+def _parse_probability(raw: str, key: str) -> float:
+    value = _parse_positive_float(raw, key)
+    if value > 1:
+        raise ConfigError(f"{key} must be less than or equal to one")
+    return value
+
+
 def _normalize_base_url(raw: str) -> str:
     value = raw.strip()
     parsed = urlparse(value)
@@ -144,6 +170,7 @@ def load_config(
     environ: Mapping[str, str] | None = None,
     require_vr_credentials: bool = True,
     require_admin_ids: bool = True,
+    require_telegram_token: bool = False,
 ) -> AppConfig:
     """Load and validate application settings.
 
@@ -161,6 +188,11 @@ def load_config(
     else:
         username = values.get("VR_USERNAME", "").strip()
         password = values.get("VR_PASSWORD", "").strip()
+
+    if require_telegram_token:
+        telegram_bot_token = _required(values, "TELEGRAM_BOT_TOKEN")
+    else:
+        telegram_bot_token = values.get("TELEGRAM_BOT_TOKEN", "").strip()
 
     admin_ids = _parse_admin_ids(
         values.get("TELEGRAM_ADMIN_IDS", ""),
@@ -185,9 +217,28 @@ def load_config(
     if log_level not in valid_log_levels:
         raise ConfigError(f"LOG_LEVEL must be one of: {', '.join(sorted(valid_log_levels))}")
 
+    max_workers = _parse_positive_int(values.get("MAX_WORKERS", "2"), "MAX_WORKERS")
+    if max_workers > 8:
+        raise ConfigError("MAX_WORKERS must be less than or equal to 8")
+    poll_timeout = _parse_positive_int(
+        values.get("TELEGRAM_POLL_TIMEOUT_SECONDS", "25"),
+        "TELEGRAM_POLL_TIMEOUT_SECONDS",
+    )
+    if poll_timeout > 50:
+        raise ConfigError("TELEGRAM_POLL_TIMEOUT_SECONDS must be <= 50")
+    captcha_mode = values.get("CAPTCHA_MODE", "manual").strip().lower()
+    if captcha_mode not in {"manual", "auto"}:
+        raise ConfigError("CAPTCHA_MODE must be manual or auto")
+    captcha_model_raw = values.get(
+        "CAPTCHA_MODEL_PATH", "models/captcha/model.onnx"
+    ).strip()
+    if not captcha_model_raw:
+        raise ConfigError("CAPTCHA_MODEL_PATH cannot be empty")
+
     return AppConfig(
         vr_username=username,
         vr_password=password,
+        telegram_bot_token=telegram_bot_token,
         telegram_admin_ids=admin_ids,
         database_path=database_path,
         captcha_dir=captcha_dir,
@@ -207,10 +258,37 @@ def load_config(
             values.get("REQUEST_TIMEOUT_SECONDS", "15"),
             "REQUEST_TIMEOUT_SECONDS",
         ),
+        source_request_attempts=_parse_positive_int(
+            values.get("SOURCE_REQUEST_ATTEMPTS", "3"),
+            "SOURCE_REQUEST_ATTEMPTS",
+        ),
+        source_retry_delay_seconds=_parse_positive_float(
+            values.get("SOURCE_RETRY_DELAY_SECONDS", "1"),
+            "SOURCE_RETRY_DELAY_SECONDS",
+        ),
         max_captcha_attempts=_parse_positive_int(
             values.get("MAX_CAPTCHA_ATTEMPTS", "3"),
             "MAX_CAPTCHA_ATTEMPTS",
         ),
         verify_ssl=_parse_bool(values.get("VERIFY_SSL", "true"), "VERIFY_SSL"),
         log_level=log_level,
+        max_workers=max_workers,
+        job_queue_size=_parse_positive_int(
+            values.get("JOB_QUEUE_SIZE", "20"), "JOB_QUEUE_SIZE"
+        ),
+        telegram_poll_timeout_seconds=poll_timeout,
+        user_rate_limit_seconds=_parse_positive_float(
+            values.get("USER_RATE_LIMIT_SECONDS", "2"),
+            "USER_RATE_LIMIT_SECONDS",
+        ),
+        source_serialize_requests=_parse_bool(
+            values.get("SOURCE_SERIALIZE_REQUESTS", "true"),
+            "SOURCE_SERIALIZE_REQUESTS",
+        ),
+        captcha_mode=captcha_mode,
+        captcha_model_path=Path(captcha_model_raw).expanduser(),
+        captcha_confidence_threshold=_parse_probability(
+            values.get("CAPTCHA_CONFIDENCE_THRESHOLD", "0.9"),
+            "CAPTCHA_CONFIDENCE_THRESHOLD",
+        ),
     )

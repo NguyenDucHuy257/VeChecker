@@ -17,4 +17,6 @@ class Migration:
 
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(version=1, filename="001_initial.sql"),
+    Migration(version=2, filename="002_telegram_updates.sql"),
+    Migration(version=3, filename="003_phase3_integrity.sql"),
 )

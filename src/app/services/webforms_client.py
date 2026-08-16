@@ -66,13 +66,21 @@ class WebFormsClient:
         password: str,
         timeout_seconds: float = 15.0,
         verify_ssl: bool = True,
+        request_attempts: int = LOOKUP_HTTP_ATTEMPTS,
+        retry_delay_seconds: float = LOOKUP_RETRY_DELAY_SECONDS,
         session: requests.Session | Any | None = None,
     ) -> None:
+        if request_attempts <= 0:
+            raise ValueError("request_attempts must be greater than zero")
+        if retry_delay_seconds <= 0:
+            raise ValueError("retry_delay_seconds must be greater than zero")
         self.base_url = base_url if base_url.endswith("/") else f"{base_url}/"
         self.username = username
         self.password = password
         self.timeout_seconds = timeout_seconds
         self.verify_ssl = verify_ssl
+        self.request_attempts = request_attempts
+        self.retry_delay_seconds = retry_delay_seconds
         self.session = session or requests.Session()
         self.session.headers.update(
             {
@@ -165,6 +173,13 @@ class WebFormsClient:
             raise SourceParseError("Không xác định được định dạng ảnh CAPTCHA.")
         return content
 
+    def current_captcha_challenge(self) -> CaptchaChallenge:
+        """Return the current challenge after a rejected login without refreshing it."""
+
+        if not self._captcha_url:
+            raise SourceParseError("Trang đăng nhập chưa cung cấp ảnh CAPTCHA.")
+        return CaptchaChallenge(self._captcha_url)
+
     def submit_login(self, captcha: str) -> None:
         state = self._require_login_state()
         form = state.as_form_fields()
@@ -223,20 +238,24 @@ class WebFormsClient:
         if not self.authenticated:
             raise SessionExpiredError("Chưa đăng nhập hoặc phiên đã hết hạn.")
 
-        for attempt in range(1, self.LOOKUP_HTTP_ATTEMPTS + 1):
+        for attempt in range(1, self.request_attempts + 1):
             try:
                 return self._lookup_candidate_once(plate)
-            except SourceHttpError as exc:
-                if (
-                    exc.status_code not in self.RETRYABLE_LOOKUP_STATUSES
-                ):
+            except (SourceTimeoutError, SourceNetworkError, SourceHttpError) as exc:
+                retryable = not isinstance(exc, SourceHttpError) or (
+                    exc.status_code in self.RETRYABLE_LOOKUP_STATUSES
+                )
+                if not retryable:
                     raise
-                if attempt >= self.LOOKUP_HTTP_ATTEMPTS:
+                if attempt >= self.request_attempts:
+                    message = f"{exc} Đã thử {self.request_attempts} lần."
+                    if not isinstance(exc, SourceHttpError):
+                        raise type(exc)(message) from exc
                     raise SourceHttpError(
-                        f"{exc} Đã thử {self.LOOKUP_HTTP_ATTEMPTS} lần.",
+                        message,
                         status_code=exc.status_code,
                     ) from exc
-                sleep(self.LOOKUP_RETRY_DELAY_SECONDS * attempt)
+                sleep(self.retry_delay_seconds * attempt)
 
         raise AssertionError("lookup retry loop ended unexpectedly")
 

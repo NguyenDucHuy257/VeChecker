@@ -121,11 +121,14 @@ CAPTCHA_MODE=manual
 
 CAPTCHA_MODE=auto
   -> ONNX inference
-  -> confidence đạt ngưỡng: thử đăng nhập một lần
-  -> confidence thấp hoặc website báo sai: gửi ảnh cho admin
+  -> confidence thấp: refresh ảnh và giải lại
+  -> website báo CAPTCHA sai: lấy challenge mới và giải lại
+  -> lặp cho đến khi đăng nhập thành công
 ```
 
-Không để model retry tự động vô hạn. Tối đa một lần thử tự động trên mỗi ảnh CAPTCHA trước khi fallback.
+Mỗi ảnh chỉ được inference một lần. Vòng auto-login tiếp tục với ảnh mới cho đến
+khi website chấp nhận CAPTCHA. Lỗi credential, network hoặc model không được coi
+là CAPTCHA sai; model lỗi sẽ fallback nhập tay, các lỗi nguồn khác trả về admin.
 
 ## 7. Test tự động
 
@@ -150,8 +153,9 @@ Không để model retry tự động vô hạn. Tối đa một lần thử t�
 
 - Tiền xử lý ảnh cho tensor đúng shape/type.
 - ONNX output chỉ chứa charset/độ dài hợp lệ.
-- Confidence dưới ngưỡng luôn fallback.
-- Website báo CAPTCHA sai sau auto inference luôn fallback.
+- Confidence dưới ngưỡng refresh ảnh và inference lại.
+- Website báo CAPTCHA sai sau auto inference lấy challenge mới và tiếp tục giải.
+- Giới hạn lần nhập tay không làm dừng vòng auto CAPTCHA.
 - Manual mode không load model.
 - Token, ảnh CAPTCHA và dự đoán không xuất hiện trong log.
 
@@ -163,6 +167,17 @@ Không để model retry tự động vô hạn. Tối đa một lần thử t�
 
 ## 8. Nghiệm thu của chủ dự án
 
+### Chuẩn bị và chạy
+
+1. Điền `TELEGRAM_BOT_TOKEN`; dùng `CAPTCHA_MODE=auto` với model chính thức hoặc
+   chuyển về `manual` khi cần kiểm tra fallback vận hành.
+2. Chạy `.\.venv\Scripts\python.exe scripts\telegram_bot.py` từ thư mục dự án.
+3. Admin nhắn `/login`, nhập CAPTCHA cho đủ số worker rồi kiểm tra `/status` có `source_ready=True`.
+4. User thử nghiệm nhắn `/start`; dùng Telegram numeric ID hiển thị trong `/users` để approve/revoke/block.
+5. Sau mỗi ca bên dưới, đối chiếu tin nhắn đúng chat và bảng `users`, `lookups`, `telegram_updates` trong SQLite.
+
+`P2-UAT-06` chỉ được PASS khi có model rõ license/checksum và báo cáo ít nhất 50 mẫu độc lập đạt 90% exact-match. Khi chưa có model đạt chuẩn, giữ manual mode và ghi UAT này là `PENDING`, không ký PASS toàn Phase 2.
+
 | ID | Thao tác | Kết quả bắt buộc |
 |---|---|---|
 | P2-UAT-01 | User mới gửi `/start` và biển số | User là `PENDING`, bị từ chối tra cứu |
@@ -171,10 +186,20 @@ Không để model retry tự động vô hạn. Tối đa một lần thử t�
 | P2-UAT-04 | Admin revoke/block user | User bị từ chối ngay ở yêu cầu kế tiếp |
 | P2-UAT-05 | Hai user gửi tổng cộng 5–10 input gần đồng thời | Không mất/trộn job và không trả sai chat |
 | P2-UAT-06 | Chạy tập test CAPTCHA độc lập | Model ONNX đạt ngưỡng exact-match đã quy định |
-| P2-UAT-07 | Dùng CAPTCHA confidence thấp hoặc cố ý làm model sai | Bot gửi ảnh riêng cho admin và đăng nhập được bằng tay |
+| P2-UAT-07 | Dùng CAPTCHA confidence thấp hoặc cố ý làm model sai | Bot refresh challenge và giải tự động tiếp cho đến khi đăng nhập; model hỏng mới fallback nhập tay |
 | P2-UAT-08 | Làm hết hạn phiên trong lúc có job | Job không chạy vòng lặp; hệ thống hoạt động lại sau login |
 | P2-UAT-09 | Restart bot | Quyền user còn nguyên, admin vẫn `ACTIVE` |
 | P2-UAT-10 | Kiểm tra log và chạy `pytest -q` | Không lộ bí mật; toàn bộ test pass |
+
+Lệnh kiểm tra kỹ thuật cuối:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m compileall -q src scripts
+.\.venv\Scripts\python.exe -m pip check
+```
+
+Baseline source hiện tại: `149 passed`. Đây là test tự động, không thay thế các ca Telegram/website live và cổng model ở trên.
 
 ## 9. Sản phẩm bàn giao và cổng phase
 

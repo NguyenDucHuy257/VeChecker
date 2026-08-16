@@ -54,8 +54,11 @@ def create_application(
         password=config.vr_password,
         timeout_seconds=config.request_timeout_seconds,
         verify_ssl=config.verify_ssl,
+        request_attempts=config.source_request_attempts,
+        retry_delay_seconds=config.source_retry_delay_seconds,
     )
     captcha_files = CaptchaFileService(config.captcha_dir)
+    captcha_files.cleanup()
     return Application(
         config=config,
         database=database,
