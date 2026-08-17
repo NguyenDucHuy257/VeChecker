@@ -145,6 +145,23 @@ def test_parse_multiple_rows_selects_latest_expiry() -> None:
     assert result.inspection_expiry == date(2031, 12, 14)
 
 
+def test_empty_vehicle_type_uses_fallback_when_other_result_data_is_valid() -> None:
+    document = """
+        <span id="txtLoaiPT"></span>
+        <span id="txtNhanHieu">NHÃN HIỆU MẪU</span>
+        <table id="DGKiemDinh">
+          <tr><td>Đơn vị</td><td>Ngày KĐ</td><td>Số tem</td><td>Thời hạn KĐ</td></tr>
+          <tr><td>ĐƠN VỊ MẪU</td><td>01/01/2030</td><td>SYNTHETIC</td><td>31/12/2030</td></tr>
+        </table>
+    """
+
+    result = parse_vehicle_result(document)
+
+    assert result.vehicle_type == "Không có dữ liệu"
+    assert result.brand == "NHÃN HIỆU MẪU"
+    assert result.inspection_expiry == date(2030, 12, 31)
+
+
 def test_inspection_expiry_column_can_change_order() -> None:
     document = """
         <span id="txtLoaiPT">Phương tiện mẫu</span>

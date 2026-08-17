@@ -19,6 +19,7 @@ from bs4.element import Tag
 
 
 HTMLDocument = bytes | str
+UNKNOWN_VEHICLE_TYPE = "Không có dữ liệu"
 
 WEBFORMS_FIELD_NAMES = (
     "__VIEWSTATE",
@@ -429,17 +430,10 @@ def parse_vehicle_result(
             f"Missing mandatory result element(s): {', '.join(missing)}"
         )
 
-    vehicle_type = _tag_value(vehicle_element)
+    vehicle_type = _tag_value(vehicle_element) or UNKNOWN_VEHICLE_TYPE
     brand = _tag_value(brand_element)
-    if not vehicle_type or not brand:
-        empty = []
-        if not vehicle_type:
-            empty.append("txtLoaiPT")
-        if not brand:
-            empty.append("txtNhanHieu")
-        raise VehicleResultParseError(
-            f"Empty mandatory result value(s): {', '.join(empty)}"
-        )
+    if not brand:
+        raise VehicleResultParseError("Empty mandatory result value(s): txtNhanHieu")
 
     rows = list(table.find_all("tr"))
     expiry_column = _find_inspection_expiry_column(rows)
