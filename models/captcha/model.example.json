@@ -1,0 +1,8 @@
+{
+  "input_width": 120,
+  "input_height": 35,
+  "length": 4,
+  "charset": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
+  "input_name": "captcha",
+  "output_name": "logits"
+}
